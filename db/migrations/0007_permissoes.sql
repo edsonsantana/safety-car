@@ -45,8 +45,7 @@ GRANT SELECT, INSERT ON sinal_risco, auditoria TO safetycar_app;
 
 GRANT SELECT ON tipo_parceiro, servico_catalogo, schema_migracao TO safetycar_app;
 
--- PostGIS: tabela de sistemas de referência (só leitura).
-GRANT SELECT ON spatial_ref_sys TO safetycar_app;
+-- PostGIS: spatial_ref_sys pertence ao superusuário e já é legível por PUBLIC (padrão da extensão).
 
 -- ---------------------------------------------------------------------
 -- Views e funções de consulta
