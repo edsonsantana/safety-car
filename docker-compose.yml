@@ -1,0 +1,31 @@
+name: safetycar
+
+services:
+  db:
+    # Tag fixada: PostgreSQL 16 + PostGIS 3.6. Digest registrado em docs/BANCO_DE_DADOS.md.
+    image: postgis/postgis:16-3.6
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      SAFETYCAR_MIGRATOR_PASSWORD: ${SAFETYCAR_MIGRATOR_PASSWORD:?defina SAFETYCAR_MIGRATOR_PASSWORD no .env}
+      SAFETYCAR_APP_PASSWORD: ${SAFETYCAR_APP_PASSWORD:?defina SAFETYCAR_APP_PASSWORD no .env}
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "127.0.0.1:${DB_PORTA:-5432}:5432"
+    volumes:
+      - safetycar_pgdata:/var/lib/postgresql/data
+      # Executado só na primeira inicialização do volume: cria papéis e o banco.
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # Saudável apenas quando o banco safetycar (criado pelo init) aceita conexões.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d safetycar"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+volumes:
+  safetycar_pgdata:
+    name: safetycar_pgdata

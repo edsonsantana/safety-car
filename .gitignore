@@ -1,0 +1,20 @@
+# Segredos locais: nunca versionar
+.env
+.env.*
+!.env.example
+
+# Material de referência ainda não revisado (pode conter contas/senhas de demonstração)
+*.zip
+files/
+docs/*.docx
+docs/*.pdf
+docs/*.html
+docs/*.png
+# README do protótipo v5: lista contas de demonstração com senha
+docs/README.md
+
+# Sistema operacional / editores
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/

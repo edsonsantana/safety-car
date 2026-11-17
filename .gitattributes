@@ -1,0 +1,6 @@
+# Scripts e SQL rodam dentro do contêiner Linux: forçar LF
+* text=auto
+*.sh  text eol=lf
+*.sql text eol=lf
+*.yml text eol=lf
+.env.example text eol=lf
