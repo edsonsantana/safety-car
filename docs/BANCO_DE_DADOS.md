@@ -1,6 +1,6 @@
 # Banco de dados do Safety Car
 
-PostgreSQL 16 + PostGIS 3.6, migrações em SQL puro executadas com `psql`. Ainda não há backend, ORM nem framework.
+PostgreSQL 16 + PostGIS 3.6, migrações em SQL puro executadas com `psql`. A API (`apps/api`) conecta como `safetycar_app` e usa SQL puro parametrizado, sem ORM.
 
 Este documento cobre a **base inicial**: identidade, tomador, parceiro tipificado, fundação geoespacial e antifraude base. O modelo de referência original é `docs/safety_car_modelo_dados_v1.sql`; as diferenças estão em [Decisões de modelagem](#decisões-de-modelagem).
 
@@ -495,7 +495,7 @@ Registradas aqui; nenhuma foi decidida nesta fase.
 
 1. **Retenção do histórico de GPS e base legal (LGPD).** Hoje só existe a posição atual.
 2. **Motor de rotas/ETA**: serviço externo ou pgRouting com malha OSM.
-3. **Stack de backend e frontend.**
+3. ~~Stack de backend e frontend.~~ Decidida: ver `CLAUDE.md` (Stack).
 4. **Valores de carência, taxas e níveis de verificação exigidos por serviço.**
 5. Novos tipos de parceiro propostos, **não criados**: `borracharia`, `auto_eletrica`, `transporte_passageiro` (levar o motorista quando o veículo é guinchado).
 6. `parceiros_proximos` deve também exigir que o ponto esteja na área de atuação declarada?

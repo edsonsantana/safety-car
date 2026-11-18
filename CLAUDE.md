@@ -11,6 +11,22 @@ Plataforma de assistência rodoviária conectada (guincho, mecânica e serviços
   - Migração aplicada não se edita: o `migrar.sh` confere o sha256. Toda migração nova declara os GRANTs do `safetycar_app` (não há default privileges).
   - Já decidido nesta fase: `tipo_parceiro` com `exige_viatura` e `permite_viatura` (guincho exige; mecânica e chaveiro permitem; seguros não); registro Susep exigido na aprovação; CNPJ numérico e alfanumérico com DV; área de atuação por centro + raio.
   - Fora do Git até revisão: zips, docx, pdf, html, png, `files/` e `docs/README.md` (README do protótipo v5, com senhas de demonstração).
+- **Keycloak de desenvolvimento** no `docker-compose.yml` (26.8.2, `start-dev`, só em 127.0.0.1), com banco próprio (`keycloak-db`). O realm `safetycar-dev` é versionado em `keycloak/realms/safetycar-dev.json`, **sem usuários, senhas nem segredos**. O client `safetycar-web` é público, com PKCE S256 e `aud=safetycar-api`. Detalhes em `docs/KEYCLOAK.md`.
+- **Esqueleto do backend** em `apps/api` (Node 24 + TypeScript estrito; Fastify, `pg`, Zod, `jose` e pino-pretty em dev; testes com `node:test`). Ainda sem regra de negócio: `GET /saude` (SELECT 1) e `GET /eu` (valida o JWT do Keycloak e devolve o `keycloak_sub`).
+  - Conecta só como `safetycar_app`: a configuração recusa `safetycar_migrator` e `postgres`, e a subida recusa papel superusuário ou com CREATE no schema `public`.
+  - Configuração por variáveis de ambiente (`API_*` e `KEYCLOAK_*`, lidas do `.env` da raiz), validada na subida.
+  - Log sem dados pessoais: sem corpo, query, cabeçalhos, IP, token nem `keycloak_sub`; o `detail` dos erros do PostgreSQL é removido.
+  - SQL puro parametrizado, sem ORM nem construtor de consultas (decidido; reavaliar quando houver consultas reais).
+- **Frontend**: plano aprovado em `docs/PLANO_FRONTEND.md`, ainda não implementado.
+
+## Comandos
+```bash
+docker compose up -d                                # banco, Keycloak e banco do Keycloak
+bash db/scripts/migrar.sh                           # migrações no banco safetycar
+bash db/scripts/testar.sh                           # testes do banco (recria safetycar_teste)
+cd apps/api && npm ci                               # dependências da API
+npm run dev | test | test:integracao | lint | build  # em apps/api
+```
 
 ## Terminologia
 - **tomador**: quem solicita o serviço. Usuário e Motorista (nomes da v8) são tomadores.
