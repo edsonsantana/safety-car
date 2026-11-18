@@ -8,7 +8,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "node --watch --env-file-if-exists=../../.env src/servidor.ts",
+    "dev": "node --watch --env-file-if-exists=../../.env src/servidor.ts | pino-pretty --translateTime SYS:HH:MM:ss --ignore pid,hostname",
     "build": "tsc -p tsconfig.build.json",
     "start": "node --env-file-if-exists=../../.env dist/servidor.js",
     "test": "node --test \"test/unit/**/*.test.ts\"",
@@ -19,10 +19,17 @@
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
     "eslint": "10.15.0",
     "eslint-config-prettier": "10.1.8",
+    "pino-pretty": "13.2.0",
     "prettier": "3.10.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.73.0"
+  },
+  "dependencies": {
+    "fastify": "5.12.8",
+    "pg": "8.23.1",
+    "zod": "4.6.7"
   }
 }
