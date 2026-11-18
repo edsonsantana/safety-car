@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vitest run src/estilos.test.ts && vite build",
+    "build": "tsc --noEmit && vitest run src/estilos.test.ts && vite build && node --test scripts/verificar-dist.test.js",
     "preview": "vite preview",
     "test": "vitest run",
     "lint": "tsc --noEmit && eslint . && prettier --check .",
@@ -18,7 +18,8 @@
   "dependencies": {
     "@fontsource-variable/inter": "5.3.0",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "react-router": "7.18.5"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
