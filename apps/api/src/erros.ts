@@ -9,12 +9,20 @@ export interface CorpoErro {
 export class ErroApi extends Error {
   readonly status: number;
   readonly codigo: string;
+  /** Cabeçalhos extras da resposta (ex.: WWW-Authenticate no 401). */
+  readonly cabecalhos: Readonly<Record<string, string>>;
 
-  constructor(status: number, codigo: string, mensagem: string) {
+  constructor(
+    status: number,
+    codigo: string,
+    mensagem: string,
+    cabecalhos: Readonly<Record<string, string>> = {},
+  ) {
     super(mensagem);
     this.name = 'ErroApi';
     this.status = status;
     this.codigo = codigo;
+    this.cabecalhos = cabecalhos;
   }
 }
 
@@ -38,7 +46,10 @@ function statusDoErro(erro: unknown): number | undefined {
 export function registrarTratamentoErros(app: FastifyInstance): void {
   app.setErrorHandler((erro, req, reply) => {
     if (erro instanceof ErroApi) {
-      return reply.code(erro.status).send(corpoErro(erro.codigo, erro.message));
+      return reply
+        .code(erro.status)
+        .headers(erro.cabecalhos)
+        .send(corpoErro(erro.codigo, erro.message));
     }
 
     const status = statusDoErro(erro);

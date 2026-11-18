@@ -2,13 +2,16 @@ import { randomUUID } from 'node:crypto';
 
 import Fastify, { type FastifyInstance, LogController } from 'fastify';
 
+import type { VerificadorToken } from './autenticacao.ts';
 import type { Banco } from './banco.ts';
 import { registrarTratamentoErros } from './erros.ts';
 import { opcoesLog } from './log.ts';
+import { rotaEu } from './rotas/eu.ts';
 import { rotaSaude } from './rotas/saude.ts';
 
 export interface OpcoesApp {
   banco: Banco;
+  verificadorToken: VerificadorToken;
   nivelLog: string;
   /** Destino do log (os testes capturam aqui); padrão: saída padrão. */
   destinoLog?: NodeJS.WritableStream;
@@ -46,7 +49,10 @@ export function construirApp(opcoes: OpcoesApp): FastifyInstance {
   });
 
   registrarTratamentoErros(app);
+  app.decorateRequest('keycloakSub', '');
+
   rotaSaude(app, opcoes.banco, opcoes.tempoLimiteSaudeMs ?? 2_000);
+  rotaEu(app, opcoes.verificadorToken);
 
   return app;
 }

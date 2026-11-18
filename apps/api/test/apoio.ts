@@ -1,5 +1,6 @@
 import { Writable } from 'node:stream';
 
+import type { VerificadorToken } from '../src/autenticacao.ts';
 import type { Banco } from '../src/banco.ts';
 
 /** Destino de log em memória: guarda cada linha JSON emitida pelo pino. */
@@ -26,3 +27,8 @@ export function bancoFalso(ping: () => Promise<void>): Banco {
 }
 
 export const bancoOk = (): Banco => bancoFalso(() => Promise.resolve());
+
+/** Verificador que recusa tudo: para testes que não tratam de autenticação. */
+export const verificadorRecusaTudo: VerificadorToken = {
+  verificar: () => Promise.reject(new Error('não usado neste teste')),
+};

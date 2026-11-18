@@ -1,5 +1,6 @@
 // Ponto de entrada: valida a configuração, confere o papel do banco e sobe o HTTP.
 import { construirApp } from './app.ts';
+import { criarVerificadorKeycloak } from './autenticacao.ts';
 import { criarBanco, criarPool, ErroPapelBanco, verificarPapel } from './banco.ts';
 import { carregarConfig, ErroConfiguracao } from './config.ts';
 
@@ -32,7 +33,8 @@ async function iniciar(): Promise<void> {
   }
 
   const banco = criarBanco(pool);
-  const app = construirApp({ banco, nivelLog: config.log.nivel });
+  const verificadorToken = criarVerificadorKeycloak(config.keycloak);
+  const app = construirApp({ banco, verificadorToken, nivelLog: config.log.nivel });
 
   pool.on('error', (erro) => {
     app.log.error({ err: erro }, 'erro em conexão ociosa do banco');
@@ -56,7 +58,7 @@ async function iniciar(): Promise<void> {
   process.on('SIGTERM', encerrar);
 
   await app.listen({ host: config.http.host, port: config.http.porta });
-  app.log.info({ banco: destinoBanco }, 'API no ar');
+  app.log.info({ banco: destinoBanco, keycloak: config.keycloak.issuer }, 'API no ar');
 }
 
 await iniciar();

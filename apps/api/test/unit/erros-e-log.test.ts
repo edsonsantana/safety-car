@@ -3,7 +3,7 @@ import { describe, test } from 'node:test';
 
 import { construirApp } from '../../src/app.ts';
 import { ErroApi } from '../../src/erros.ts';
-import { bancoOk, LogCapturado } from '../apoio.ts';
+import { bancoOk, LogCapturado, verificadorRecusaTudo } from '../apoio.ts';
 
 // Valores fictícios, só para conferir que não aparecem no log.
 const CPF = '52998224725';
@@ -12,7 +12,12 @@ const CELULAR = '+5511912345678';
 
 function appComLog() {
   const log = new LogCapturado();
-  const app = construirApp({ banco: bancoOk(), nivelLog: 'trace', destinoLog: log });
+  const app = construirApp({
+    verificadorToken: verificadorRecusaTudo,
+    banco: bancoOk(),
+    nivelLog: 'trace',
+    destinoLog: log,
+  });
   return { app, log };
 }
 

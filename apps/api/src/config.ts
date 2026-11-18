@@ -34,6 +34,14 @@ const esquema = z.object({
     message: `use o papel safetycar_app; ${PAPEIS_PROIBIDOS.join(' e ')} são proibidos na API`,
   }),
   API_DB_SENHA: texto(),
+
+  // Realm do Keycloak cujos tokens a API aceita (o "iss" do token deve ser exatamente este).
+  KEYCLOAK_ISSUER: texto()
+    .refine((valor) => URL.canParse(valor) && /^https?:$/.test(new URL(valor).protocol), {
+      message: 'deve ser uma URL http(s), ex.: http://localhost:8080/realms/safetycar-dev',
+    })
+    .transform((valor) => valor.replace(/\/+$/, '')),
+  KEYCLOAK_AUDIENCE: texto('safetycar-api'),
 });
 
 export interface Config {
@@ -46,6 +54,7 @@ export interface Config {
     readonly usuario: string;
     readonly senha: string;
   };
+  readonly keycloak: { readonly issuer: string; readonly audience: string };
 }
 
 /** Configuração inválida. A mensagem lista as variáveis e o motivo, nunca o valor. */
@@ -88,5 +97,6 @@ export function carregarConfig(ambiente: NodeJS.ProcessEnv = process.env): Confi
       usuario: v.API_DB_USUARIO,
       senha: v.API_DB_SENHA,
     },
+    keycloak: { issuer: v.KEYCLOAK_ISSUER, audience: v.KEYCLOAK_AUDIENCE },
   };
 }

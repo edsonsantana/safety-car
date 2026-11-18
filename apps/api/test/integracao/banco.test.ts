@@ -8,6 +8,7 @@ import type pg from 'pg';
 import { construirApp } from '../../src/app.ts';
 import { criarBanco, criarPool, ErroPapelBanco, verificarPapel } from '../../src/banco.ts';
 import { carregarConfig, type Config } from '../../src/config.ts';
+import { verificadorRecusaTudo } from '../apoio.ts';
 
 let config: Config;
 let pool: pg.Pool;
@@ -38,7 +39,11 @@ describe('banco real', () => {
   });
 
   test('GET /saude responde 200 com o banco no ar', async () => {
-    const app = construirApp({ banco: criarBanco(pool), nivelLog: 'silent' });
+    const app = construirApp({
+      verificadorToken: verificadorRecusaTudo,
+      banco: criarBanco(pool),
+      nivelLog: 'silent',
+    });
     const resposta = await app.inject({ method: 'GET', url: '/saude' });
     await app.close();
     assert.equal(resposta.statusCode, 200);

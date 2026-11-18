@@ -2,11 +2,15 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import { construirApp } from '../../src/app.ts';
-import { bancoFalso, bancoOk, LogCapturado } from '../apoio.ts';
+import { bancoFalso, bancoOk, LogCapturado, verificadorRecusaTudo } from '../apoio.ts';
 
 describe('GET /saude', () => {
   test('200 quando o banco responde', async () => {
-    const app = construirApp({ banco: bancoOk(), nivelLog: 'silent' });
+    const app = construirApp({
+      verificadorToken: verificadorRecusaTudo,
+      banco: bancoOk(),
+      nivelLog: 'silent',
+    });
     const resposta = await app.inject({ method: 'GET', url: '/saude' });
     assert.equal(resposta.statusCode, 200);
     assert.deepEqual(resposta.json(), { status: 'ok', banco: 'ok' });
@@ -20,6 +24,7 @@ describe('GET /saude', () => {
       code: 'ECONNREFUSED',
     });
     const app = construirApp({
+      verificadorToken: verificadorRecusaTudo,
       banco: bancoFalso(() => Promise.reject(falha)),
       nivelLog: 'info',
       destinoLog: log,
@@ -34,6 +39,7 @@ describe('GET /saude', () => {
 
   test('503 quando o banco não responde dentro do tempo limite', async () => {
     const app = construirApp({
+      verificadorToken: verificadorRecusaTudo,
       banco: bancoFalso(() => new Promise(() => undefined)),
       nivelLog: 'silent',
       tempoLimiteSaudeMs: 50,
@@ -44,7 +50,11 @@ describe('GET /saude', () => {
   });
 
   test('devolve um id de requisição', async () => {
-    const app = construirApp({ banco: bancoOk(), nivelLog: 'silent' });
+    const app = construirApp({
+      verificadorToken: verificadorRecusaTudo,
+      banco: bancoOk(),
+      nivelLog: 'silent',
+    });
     const resposta = await app.inject({ method: 'GET', url: '/saude' });
     assert.match(String(resposta.headers['x-request-id']), /^[0-9a-f-]{36}$/);
     await app.close();
