@@ -1,0 +1,72 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+
+/*
+ * Identidade visual da v8. Toda troca de cor passa pelo teste de contraste
+ * (src/estilos.test.ts), que lê este bloco: texto >= 4,5:1 e componentes >= 3:1.
+ * A paleta padrão do Tailwind é removida para que só estas cores existam.
+ */
+@theme {
+  --color-*: initial;
+
+  --color-marinho: #0b1f3a;
+  --color-limao: #d4ff00;
+  --color-fundo: #f4f7fb;
+  --color-branco: #ffffff;
+  --color-texto: #14233b;
+  --color-texto-sec: #4a5a73;
+  /* Só divisórias e cartões (decorativo, 1,51:1). Campo de formulário usa borda-campo. */
+  --color-borda: #c9d3e2;
+  --color-borda-campo: #4a5a73;
+  --color-link: #1f4e9e;
+  --color-erro: #9c1f30;
+
+  /* Selos de status (CSS da v8); o texto escrito no selo é sempre o sinal principal. */
+  --color-selo-aprovado-fundo: #cdebd0;
+  --color-selo-aprovado-texto: #1b682c;
+  --color-selo-em-analise-fundo: #fff0b8;
+  --color-selo-em-analise-texto: #795609;
+  --color-selo-pendente-fundo: #e9eff6;
+  --color-selo-pendente-texto: #26466b;
+  --color-selo-vencido-fundo: #ffe6e8;
+  --color-selo-vencido-texto: #9c1f30;
+
+  /* Cartões de aviso (CSS da v8). */
+  --color-aviso-info-fundo: #e9eff6;
+  --color-aviso-info-texto: #26466b;
+  --color-aviso-atencao-fundo: #fff1d1;
+  --color-aviso-atencao-texto: #593c09;
+  --color-aviso-erro-fundo: #fff0f2;
+  --color-aviso-erro-texto: #9c2530;
+
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  html {
+    background-color: var(--color-fundo);
+    color: var(--color-texto);
+  }
+
+  /* Foco visível: anel azul-marinho no fundo claro... */
+  :focus-visible {
+    outline: 2px solid var(--color-marinho);
+    outline-offset: 2px;
+  }
+
+  /* ...e verde-limão sobre o azul-marinho (o limão nunca vai sobre fundo claro). */
+  .fundo-escuro :focus-visible {
+    outline-color: var(--color-limao);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
