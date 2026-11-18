@@ -1,9 +1,14 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
-import { describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 import { Rotas } from './Rotas.tsx';
+
+// A página inicial consulta GET /saude; aqui a consulta fica pendente.
+beforeEach(() => {
+  vi.stubGlobal('fetch', () => new Promise(() => undefined));
+});
 
 function abrir(caminho: string) {
   return render(
