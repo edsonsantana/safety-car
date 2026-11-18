@@ -4,3 +4,5 @@
 *.sql text eol=lf
 *.yml text eol=lf
 .env.example text eol=lf
+# Código dos apps: LF (o Prettier confere endOfLine=lf; CRLF quebraria o lint no Windows)
+apps/** text=auto eol=lf
