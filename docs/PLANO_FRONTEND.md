@@ -1,6 +1,6 @@
 # Plano do frontend (`apps/web`)
 
-Esqueleto do frontend do Safety Car em React + TypeScript + Vite + Tailwind. Plano **aprovado em 2026-11-18**. Ainda não implementado.
+Esqueleto do frontend do Safety Car em React + TypeScript + Vite + Tailwind. Plano **aprovado em 2026-11-18** e **implementado em 2026-11-18** (etapas 1 a 6). Uso e decisões de implementação no README, seção "Frontend".
 
 **Ordem:** o backend (`apps/api`) vem primeiro. O frontend só começa quando `GET /saude` existir na API.
 

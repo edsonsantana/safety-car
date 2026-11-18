@@ -17,7 +17,11 @@ Plataforma de assistência rodoviária conectada (guincho, mecânica e serviços
   - Configuração por variáveis de ambiente (`API_*` e `KEYCLOAK_*`, lidas do `.env` da raiz), validada na subida.
   - Log sem dados pessoais: sem corpo, query, cabeçalhos, IP, token nem `keycloak_sub`; o `detail` dos erros do PostgreSQL é removido.
   - SQL puro parametrizado, sem ORM nem construtor de consultas (decidido; reavaliar quando houver consultas reais).
-- **Frontend**: plano aprovado em `docs/PLANO_FRONTEND.md`, ainda não implementado.
+- **Esqueleto do frontend** em `apps/web` (React 19 + TypeScript estrito; Vite 8, Tailwind 4, React Router 7 declarativo; testes com Vitest, Testing Library e `vitest-axe`), conforme `docs/PLANO_FRONTEND.md`. Ainda sem autenticação nem formulários reais.
+  - Componentes-base em `src/componentes` (Botao, CampoTexto, CampoCodigo, IndicadorEtapas, CartaoAviso, SeloStatus); layouts móvel (390 px) e de painel em `src/layouts`; rotas vazias `/cadastro`, `/entrar`, `/verificacao` e `/central`; `/componentes` só em desenvolvimento (o build confere que ela não vai para o `dist/`).
+  - Cores só pelos tokens do `@theme` em `src/estilos.css`; o teste de contraste roda no build. Verde-limão nunca sobre fundo claro.
+  - A página inicial mostra o estado do `GET /saude` via proxy do Vite (`/api` → `API_URL_DEV`). Variáveis `VITE_*` vão para o navegador: nunca segredo nelas.
+  - ESLint 10 com `overrides` relaxando só o peer do `eslint-plugin-jsx-a11y`. React Hook Form + Zod entram só com o primeiro formulário real.
 
 ## Comandos
 ```bash
@@ -26,6 +30,8 @@ bash db/scripts/migrar.sh                           # migrações no banco safet
 bash db/scripts/testar.sh                           # testes do banco (recria safetycar_teste)
 cd apps/api && npm ci                               # dependências da API
 npm run dev | test | test:integracao | lint | build  # em apps/api
+cd apps/web && npm ci                               # dependências do frontend
+npm run dev | test | lint | build                   # em apps/web (build inclui contraste e checagem do dist/)
 ```
 
 ## Terminologia
