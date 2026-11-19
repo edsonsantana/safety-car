@@ -22,7 +22,7 @@ O `docker compose` exige todas as variáveis marcadas como obrigatórias no `.en
 
 ## Keycloak (desenvolvimento)
 
-Sobe junto com o `docker compose up -d`. O console fica em http://localhost:8080/admin (usuário e senha `KEYCLOAK_ADMIN_*` do `.env`). O realm `safetycar-dev` é importado de `keycloak/realms/safetycar-dev.json`, que não tem usuários nem segredos. Detalhes em [`docs/KEYCLOAK.md`](docs/KEYCLOAK.md).
+Sobe junto com o `docker compose up -d`. O console fica em http://localhost:8080/admin (porta `KEYCLOAK_PORTA` do `.env`; usuário e senha `KEYCLOAK_ADMIN_*`). O realm `safetycar-dev` é importado de `keycloak/realms/safetycar-dev.json`, que não tem usuários nem segredos. Detalhes em [`docs/KEYCLOAK.md`](docs/KEYCLOAK.md).
 
 ## API (`apps/api`)
 

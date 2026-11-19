@@ -12,6 +12,8 @@ docker compose up -d     # sobe db, keycloak-db e keycloak
 docker compose ps        # espere "healthy" no keycloak (a primeira subida leva cerca de 1 min)
 ```
 
+Os endereços abaixo usam a porta padrão 8080; troque pela sua `KEYCLOAK_PORTA` se for outra.
+
 - **Console de administração:** http://localhost:8080/admin. O usuário e a senha são `KEYCLOAK_ADMIN_USUARIO` e `KEYCLOAK_ADMIN_SENHA` do `.env`. Esse administrador do realm `master` só é criado na **primeira** subida: mudar o `.env` depois não muda a senha.
 - **Descoberta OIDC do realm:** http://localhost:8080/realms/safetycar-dev/.well-known/openid-configuration
 - **Recomeçar o Keycloak do zero** apaga usuários e configurações feitas no console, mas não toca no banco de negócio:
@@ -20,6 +22,7 @@ docker compose ps        # espere "healthy" no keycloak (a primeira subida leva 
   docker volume rm safetycar_keycloak_pgdata
   docker compose up -d
   ```
+- **Trocar a porta:** a porta publicada é `KEYCLOAK_PORTA` (padrão 8080). No Windows a 8080 pode estar reservada pelo sistema (erro *"forbidden by its access permissions"*); confira com `netsh interface ipv4 show excludedportrange protocol=tcp` e escolha uma porta livre, por exemplo 8180. Ao trocar, ajuste **também** o `KEYCLOAK_ISSUER` (ex.: `http://localhost:8180/realms/safetycar-dev`): o `--env-file` do Node não expande `${KEYCLOAK_PORTA}`. Depois, `docker compose up -d` recria o contêiner com o novo `KC_HOSTNAME`; o realm e os usuários não são afetados (o hostname não fica no banco). As redirect URIs do realm não mudam: apontam para o Vite (5173), não para o Keycloak.
 
 ## Contêineres
 
@@ -30,7 +33,7 @@ docker compose ps        # espere "healthy" no keycloak (a primeira subida leva 
 
 - **Banco do Keycloak:** é próprio, separado do banco de negócio (`db`), no volume `safetycar_keycloak_pgdata`. Os dois nunca se misturam, e recriar um não afeta o outro.
 - **Credenciais:** só no `.env` (`KEYCLOAK_DB_PASSWORD`, `KEYCLOAK_ADMIN_USUARIO` e `KEYCLOAK_ADMIN_SENHA`). O `.env.example` tem valores fictícios.
-- **`KC_HOSTNAME=http://localhost:${KEYCLOAK_PORTA}`:** fixa o `iss` dos tokens em `http://localhost:8080/realms/safetycar-dev`, que é o valor esperado pela API (`KEYCLOAK_ISSUER`). Acessar por `127.0.0.1` em vez de `localhost` não muda o `iss`.
+- **`KC_HOSTNAME=http://localhost:${KEYCLOAK_PORTA}`:** fixa o `iss` dos tokens em `http://localhost:${KEYCLOAK_PORTA}/realms/safetycar-dev`, que é o valor esperado pela API (`KEYCLOAK_ISSUER`). Acessar por `127.0.0.1` em vez de `localhost` não muda o `iss`.
 - **Healthcheck:** consulta `/health/ready` na porta de gerenciamento (9000), que não é publicada.
 
 ## Realm `safetycar-dev`
@@ -75,9 +78,9 @@ Lendo a configuração do próprio Keycloak, com um token de administrador do re
 set -a; . ./.env; set +a
 TOKEN=$(curl -s -d grant_type=password -d client_id=admin-cli \
   --data-urlencode "username=$KEYCLOAK_ADMIN_USUARIO" --data-urlencode "password=$KEYCLOAK_ADMIN_SENHA" \
-  http://localhost:8080/realms/master/protocol/openid-connect/token | python -c "import json,sys;print(json.load(sys.stdin)['access_token'])")
-curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:8080/admin/realms/safetycar-dev/clients?clientId=safetycar-web"
-curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/admin/realms/safetycar-dev/users/count   # 0 depois da importação
+  "http://localhost:${KEYCLOAK_PORTA:-8080}/realms/master/protocol/openid-connect/token" | python -c "import json,sys;print(json.load(sys.stdin)['access_token'])")
+curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:${KEYCLOAK_PORTA:-8080}/admin/realms/safetycar-dev/clients?clientId=safetycar-web"
+curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:${KEYCLOAK_PORTA:-8080}/admin/realms/safetycar-dev/users/count"   # 0 depois da importação
 ```
 
 ## Usuário de teste local
