@@ -39,12 +39,17 @@ SELECT pg_temp.espera_erro($$
   VALUES ('pj', pg_temp.cnpj('900000000002'), '[TESTE] Telefone ruim', 'x@exemplo.invalid', '11 9000-0000')$$,
   '23514', 'parceiro com telefone fora de E.164 é rejeitado');
 
--- Parceiros base
-INSERT INTO parceiro (id, tipo_pessoa, cnpj, nome, email_comercial, telefone_e164) VALUES
-  ('00000000-0000-4000-8000-0000000000a1', 'pj',  pg_temp.cnpj('900000000010'), '[TESTE] Guincho Ltda',  'g@exemplo.invalid',  '+5511900000110'),
-  ('00000000-0000-4000-8000-0000000000a2', 'pj',  pg_temp.cnpj('900000000020'), '[TESTE] Seguros S.A.',  's@exemplo.invalid',  '+5511900000120'),
-  ('00000000-0000-4000-8000-0000000000a3', 'mei', pg_temp.cnpj('90000000003A'), '[TESTE] Mecânica MEI',  'm@exemplo.invalid',  '+5511900000130'),
-  ('00000000-0000-4000-8000-0000000000a4', 'pj',  pg_temp.cnpj('900000000040'), '[TESTE] Sem tipo',      'n@exemplo.invalid',  '+5511900000140');
+-- Parceiros base (PJ/MEI com responsável: exigido na aprovação desde a 0008; ver 09_cpf_obrigatorio.sql)
+INSERT INTO parceiro (id, tipo_pessoa, cnpj, nome, email_comercial, telefone_e164,
+                      responsavel_nome, responsavel_cpf_cifrado, responsavel_cpf_hash) VALUES
+  ('00000000-0000-4000-8000-0000000000a1', 'pj',  pg_temp.cnpj('900000000010'), '[TESTE] Guincho Ltda',  'g@exemplo.invalid',  '+5511900000110',
+   '[TESTE] Responsável', '\x10', pg_temp.hmac_teste('39053344705')),
+  ('00000000-0000-4000-8000-0000000000a2', 'pj',  pg_temp.cnpj('900000000020'), '[TESTE] Seguros S.A.',  's@exemplo.invalid',  '+5511900000120',
+   '[TESTE] Responsável', '\x10', pg_temp.hmac_teste('39053344705')),
+  ('00000000-0000-4000-8000-0000000000a3', 'mei', pg_temp.cnpj('90000000003A'), '[TESTE] Mecânica MEI',  'm@exemplo.invalid',  '+5511900000130',
+   '[TESTE] Titular MEI', '\x11', pg_temp.hmac_teste('16899535009')),
+  ('00000000-0000-4000-8000-0000000000a4', 'pj',  pg_temp.cnpj('900000000040'), '[TESTE] Sem tipo',      'n@exemplo.invalid',  '+5511900000140',
+   '[TESTE] Responsável', '\x10', pg_temp.hmac_teste('39053344705'));
 
 SELECT pg_temp.espera_erro($$
   INSERT INTO parceiro (tipo_pessoa, cnpj, nome, email_comercial, telefone_e164)

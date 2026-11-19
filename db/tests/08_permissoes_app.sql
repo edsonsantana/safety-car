@@ -56,9 +56,11 @@ SELECT pg_temp.aceita($$SELECT count(*) FROM vw_parceiro_posicao_valida$$,
 -- Fluxo completo do parceiro com os privilégios do app (os triggers rodam como o app).
 SELECT pg_temp.aceita($$
   WITH p AS (
-    INSERT INTO parceiro (id, tipo_pessoa, cnpj, nome, email_comercial, telefone_e164)
+    INSERT INTO parceiro (id, tipo_pessoa, cnpj, nome, email_comercial, telefone_e164,
+                          responsavel_nome, responsavel_cpf_cifrado, responsavel_cpf_hash)
     VALUES ('00000000-0000-4000-8000-0000000000f1', 'pj', '930000000001' || cnpj_dv('930000000001'),
-            '[TESTE] Guincho via app', 'app-g@exemplo.invalid', '+5511900000400')
+            '[TESTE] Guincho via app', 'app-g@exemplo.invalid', '+5511900000400',
+            '[TESTE] Responsável', '\x10', pg_temp.hmac_teste('39053344705'))
     RETURNING id)
   INSERT INTO parceiro_tipo (parceiro_id, tipo_codigo) SELECT id, 'guincho' FROM p$$,
   'app cadastra parceiro e tipo');

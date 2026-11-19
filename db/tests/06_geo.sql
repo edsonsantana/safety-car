@@ -7,8 +7,10 @@ CREATE FUNCTION pg_temp.cria_parceiro(p_nome text, p_base_cnpj text, p_tipo text
 RETURNS uuid LANGUAGE plpgsql AS $f$
 DECLARE v_parceiro uuid; v_viatura uuid;
 BEGIN
-  INSERT INTO parceiro (tipo_pessoa, cnpj, nome, email_comercial, telefone_e164)
-  VALUES ('pj', p_base_cnpj || cnpj_dv(p_base_cnpj), p_nome, 'geo@exemplo.invalid', '+5511900000200')
+  INSERT INTO parceiro (tipo_pessoa, cnpj, nome, email_comercial, telefone_e164,
+                        responsavel_nome, responsavel_cpf_cifrado, responsavel_cpf_hash)
+  VALUES ('pj', p_base_cnpj || cnpj_dv(p_base_cnpj), p_nome, 'geo@exemplo.invalid', '+5511900000200',
+          '[TESTE] Responsável', '\x10', pg_temp.hmac_teste('39053344705'))
   RETURNING id INTO v_parceiro;
   INSERT INTO parceiro_tipo (parceiro_id, tipo_codigo) VALUES (v_parceiro, p_tipo);
   INSERT INTO parceiro_viatura (parceiro_id, placa, tipo)

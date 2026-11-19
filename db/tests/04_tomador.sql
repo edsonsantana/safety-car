@@ -20,16 +20,19 @@ SELECT pg_temp.espera_erro($$
 SELECT pg_temp.espera_erro($$
   INSERT INTO tomador (usuario_id, nome_completo, cpf_hash)
   VALUES ('00000000-0000-4000-8000-000000000012', '[TESTE] Tomador Dois', pg_temp.hmac_teste('98765432100'))$$,
-  '23514', 'cpf_hash sem cpf_cifrado é rejeitado');
+  '23502', 'cpf_hash sem cpf_cifrado é rejeitado (cpf_cifrado obrigatório desde a 0008)');
 
+-- Sem CPF: coberto em 09_cpf_obrigatorio.sql (obrigatório desde a 0008).
 SELECT pg_temp.aceita($$
-  INSERT INTO tomador (usuario_id, nome_completo)
-  VALUES ('00000000-0000-4000-8000-000000000012', '[TESTE] Tomador Dois')$$,
-  'tomador sem CPF (decisão de quando exigir está pendente)');
+  INSERT INTO tomador (usuario_id, nome_completo, cpf_cifrado, cpf_hash)
+  VALUES ('00000000-0000-4000-8000-000000000012', '[TESTE] Tomador Dois',
+          '\xcafebabe', pg_temp.hmac_teste('98765432100'))$$,
+  'segundo tomador com outro CPF');
 
 SELECT pg_temp.espera_erro($$
-  INSERT INTO tomador (usuario_id, nome_completo)
-  VALUES ('00000000-0000-4000-8000-000000000013', '[TESTE] Parceiro como tomador')$$,
+  INSERT INTO tomador (usuario_id, nome_completo, cpf_cifrado, cpf_hash)
+  VALUES ('00000000-0000-4000-8000-000000000013', '[TESTE] Parceiro como tomador',
+          '\x0bad', pg_temp.hmac_teste('52998224725'))$$,
   'SC001', 'usuário de perfil parceiro não pode ser tomador');
 
 SELECT pg_temp.aceita($$

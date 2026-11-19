@@ -60,6 +60,7 @@ Imagem fixada: `postgis/postgis:16-3.6`, digest `sha256:d07ce3f06f657b6516c75114
 | `0005_geo.sql` | `endereco.localizacao`, `parceiro_area_atuacao`, `parceiro_posicao_atual`, `vw_parceiro_posicao_valida`, `parceiros_proximos()` |
 | `0006_antifraude_base.sql` | `meio_pagamento`, `dispositivo`, `sinal_risco`, `bloqueio`, `esta_bloqueado()` |
 | `0007_permissoes.sql` | privilégios do `safetycar_app` |
+| `0008_cpf_obrigatorio.sql` | CPF do tomador `NOT NULL` (exigido no cadastro); responsável legal de PJ/MEI (`responsavel_nome`, `responsavel_cpf_cifrado`, `responsavel_cpf_hash`) exigido na aprovação (SC014) |
 
 Privilégios do `safetycar_app` (0007):
 
@@ -203,8 +204,8 @@ Unicidades: `keycloak_sub`, `email`, `celular_e164`. Trigger `tg_usuario_perfil_
 |---|---|---|---|
 | usuario_id | uuid PK/FK | usuário | sim |
 | nome_completo, nome_social | text | nome | sim |
-| cpf_cifrado | bytea | CPF cifrado pela aplicação | sim |
-| cpf_hash | dom_hmac UNIQUE | busca e unicidade do CPF; CHECK: par com `cpf_cifrado` | sim |
+| cpf_cifrado | bytea NOT NULL | CPF cifrado pela aplicação; obrigatório no cadastro (0008) | sim |
+| cpf_hash | dom_hmac NOT NULL UNIQUE | busca e unicidade do CPF; obrigatório no cadastro (0008) | sim |
 | data_nascimento | date | idade | sim |
 | endereco_id | uuid FK | endereço | sim |
 | nivel_verificacao | smallint 1–3 | 1 = e-mail + 2FA; 2 = celular e CPF; 3 = documento com foto | sim |
@@ -263,6 +264,8 @@ Carga inicial:
 | tipo_pessoa | text CHECK | `pj`, `mei`, `pf` | não |
 | cnpj | dom_cnpj UNIQUE | obrigatório para `pj` e `mei` | PF/MEI |
 | cpf_cifrado, cpf_hash | bytea, dom_hmac UNIQUE | obrigatório (`cpf_hash`) para `pf`; CHECK: par | sim |
+| responsavel_nome | text | nome do responsável legal (PJ/MEI); obrigatório quando há CPF do responsável (0008) | sim |
+| responsavel_cpf_cifrado, responsavel_cpf_hash | bytea, dom_hmac | CPF do responsável legal, cifrado e com HMAC; **sem UNIQUE** (a mesma pessoa pode responder por várias empresas ou ser tomador). Exigido na aprovação de `pj`/`mei` (SC014); proibido para `pf` (o titular é o próprio `cpf_hash`). Índice parcial `ix_parceiro_responsavel_cpf` para antifraude (0008) | sim |
 | nome | text | razão social (PJ/MEI) ou nome completo (PF) | PF/MEI |
 | nome_fantasia | text | nome comercial | não |
 | email_comercial | citext | contato | PF/MEI |
@@ -425,6 +428,7 @@ As regras ficam no banco para valer para qualquer cliente que venha a existir. E
 | SC007 | aprovação de parceiro sem nenhum tipo | `parceiro_aprovacao()` |
 | SC008 | vínculo com tipo de parceiro inativo | `parceiro_tipo_ativo()` |
 | SC010 | UPDATE, DELETE ou TRUNCATE em `auditoria` | `auditoria_somente_insercao()` |
+| SC014 | aprovação de parceiro `pj`/`mei` sem CPF do responsável, ou remoção desse CPF com o parceiro aprovado | `parceiro_aprovacao()` (redefinida na 0008), `parceiro_responsavel_mantido()` |
 | 22023 | parâmetro inválido em `parceiros_proximos` (lat, lng, raio, serviço) | `parceiros_proximos()` |
 
 Notas:
@@ -476,6 +480,8 @@ Em relação ao `safety_car_modelo_dados_v1.sql`:
 - `usuario`: CHECK `status = 'excluido'` ⇔ `excluido_em` preenchido. `endereco` e área: município IBGE coerente com a UF.
 - `sinal_risco.tipo`: lista inicial **proposta**, para revisão (`multiplas_contas_dispositivo`, `dado_em_bloqueio`, `cartao_recusado`, `localizacao_inconsistente`, `cadastro_acelerado`, `outro`).
 - O app **não apaga** `usuario`, `consentimento`, `verificacao_identidade` nem `sinal_risco` (ver privilégios).
+- **CPF do tomador no cadastro** (decidido, 0008): `cpf_cifrado` e `cpf_hash` `NOT NULL`. A linha de `tomador` só existe com CPF; o `usuario` pode existir antes (cadastro em etapas).
+- **CPF do responsável de PJ/MEI na aprovação** (decidido, 0008), como o Susep: o rascunho fica livre. Em parceiro já aprovado, o responsável pode ser trocado, não removido. Mesma chave de HMAC e normalização, então um `bloqueio` `cpf_hash` também alcança o responsável.
 
 ## Fora desta fase e por quê
 
