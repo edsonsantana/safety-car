@@ -63,6 +63,7 @@ Imagem fixada: `postgis/postgis:16-3.6`, digest `sha256:d07ce3f06f657b6516c75114
 | `0008_cpf_obrigatorio.sql` | CPF do tomador `NOT NULL` (exigido no cadastro); responsável legal de PJ/MEI (`responsavel_nome`, `responsavel_cpf_cifrado`, `responsavel_cpf_hash`) exigido na aprovação (SC014) |
 | `0009_niveis_verificacao.sql` | `auditoria.papel_bd`; auditoria automática da parametrização (`auditar_parametrizacao`, `bloquear_truncate`, `somente_insercao`); `nivel_verificacao`, `requisito_verificacao`, `nivel_requisito`, `servico_nivel_minimo`, `nivel_verificacao_historico`; `parceiro.nivel_verificacao`; `nivel_minimo_servico()`, `cumpre_nivel_minimo()` |
 | `0010_regras_taxa.sql` | extensão `btree_gist`; `vigencia_imutavel()` (SC012); `regra_taxa` com exclusão de vigência por escopo; `regra_taxa_vigente()` |
+| `0011_garantia_pagamento.sql` | `politica_garantia` (vigência imutável) e `politica_garantia_vigente()`; `provedor_pagamento` (capacidades, sem credenciais) |
 
 Privilégios do `safetycar_app` (0007):
 
@@ -84,6 +85,8 @@ Privilégios concedidos nas migrações seguintes (cada uma declara os seus):
 | `nivel_minimo_servico`, `cumpre_nivel_minimo` | EXECUTE | 0009 |
 | `regra_taxa` | SELECT (parametrização) | 0010 |
 | `regra_taxa_vigente` | EXECUTE | 0010 |
+| `politica_garantia`, `provedor_pagamento` | SELECT (parametrização) | 0011 |
+| `politica_garantia_vigente` | EXECUTE | 0011 |
 
 **Não há `ALTER DEFAULT PRIVILEGES`.** Toda migração futura que criar tabela, view ou função declara os GRANTs do app. É mais explícito e evita conceder DELETE sem querer.
 
@@ -134,6 +137,9 @@ erDiagram
   usuario |o--o{ nivel_verificacao_historico : "concede (central)"
   tipo_parceiro ||--o{ regra_taxa : "escopo"
   servico_catalogo ||--o{ regra_taxa : "escopo"
+  servico_catalogo ||--o{ politica_garantia : "garantia por serviço"
+  nivel_verificacao ||--o{ politica_garantia : "nível do tomador"
+  provedor_pagamento
 ```
 
 ## Dicionário de dados
@@ -506,6 +512,37 @@ Unidade por componente (CHECK `ck_regra_taxa_unidade`):
 - **`regra_taxa_vigente(tipo, servico, uf, componente, instante = now())`**: devolve a linha da UF ou, se não houver, a nacional. **Recusa com SC013** se não houver regra ou se a aplicável estiver `a_definir`, inclusive quando a da UF está a definir e há nacional definida (não cai na nacional). Parâmetro inválido: 22023. Não há função de cálculo do preço: o cálculo depende do chamado (fase seguinte).
 - Fora desta fase: trechos de rodovia, motor de rotas, integração com Google/Waze. `base_distancia` só registra **qual** distância a regra usará.
 
+### Garantia e provedores de pagamento (0011)
+
+**politica_garantia**: quanto o tomador deixa de garantia, por serviço, nível de verificação do tomador e modalidade. Não é dado pessoal.
+
+| Coluna | Tipo | Finalidade |
+|---|---|---|
+| servico_codigo | text FK | serviço |
+| nivel_verificacao | smallint FK | nível do tomador |
+| modalidade | text CHECK | `pre_autorizacao_cartao`, `pix_pre_pago` |
+| calculo | text CHECK | `valor_fixo` (usa `valor_centavos`) ou `percentual` (usa `percentual_bp`); CHECK: exatamente um dos dois |
+| valor_centavos | bigint ≥ 0 | valor fixo em centavos |
+| percentual_bp | integer 0–10000 | pontos-base **da estimativa do serviço** (o cálculo da estimativa é da fase do chamado) |
+| situacao | text CHECK | `a_definir` (valor zerado) ou `definido` |
+| inicio_vigencia, fim_vigencia | timestamptz | mesma regra da `regra_taxa` |
+
+- `ex_garantia_vigencia`: sem sobreposição por `(serviço, nível, modalidade)` (23P01). Imutável por `vigencia_imutavel()` (SC012).
+- `politica_garantia_vigente(servico, nivel, modalidade, instante = now())`: **recusa com SC013** se não houver política ou se estiver a definir (nunca devolve garantia zero); 22023 para parâmetro inválido.
+
+**provedor_pagamento**: catálogo de processadores e o que cada um suporta. **Sem chave, segredo, token, credencial nem URL de callback** (um teste confere os nomes das colunas): isso fica na configuração do backend, fora do Git.
+
+| Coluna | Tipo | Finalidade |
+|---|---|---|
+| codigo | text | identificador (`^[a-z][a-z0-9_]*$`); UNIQUE `(codigo, ambiente)` |
+| nome | text | rótulo |
+| ambiente | text CHECK | `sandbox`, `producao` |
+| suporta_pre_autorizacao, suporta_pix, suporta_split | boolean | capacidades |
+| ativo | boolean | padrão **false**: ativação explícita |
+| observacao | text | nota livre |
+
+Fora desta fase: pagamento efetivo, pré-autorização real, repasse e integração com o provedor.
+
 ### Controle
 
 **schema_migracao**: criada pelo `migrar.sh`: `versao` PK, `arquivo`, `sha256`, `aplicada_em`. Não é dado pessoal.
@@ -626,3 +663,5 @@ Registradas aqui; nenhuma foi decidida nesta fase.
 11. O banco não confere se os requisitos do nível foram cumpridos (o cálculo é da aplicação). Avaliar uma checagem no banco para `origem = 'automatica'`.
 12. Distância rodoviária para cobrança (`rodoviaria_snv`, `rodoviaria_osm`, `provedor_externo`): fase seguinte, pendente de confirmar a licença do SNV e os termos do Google para guardar a distância usada em cobrança. Até lá, só `linha_reta` tem cálculo no banco.
 13. Não há vínculo formal entre tipo de parceiro e serviço (quais serviços cada tipo presta); hoje só a carga de `regra_taxa` reflete isso.
+14. Ligar `meio_pagamento.psp` (texto livre, 0006) a `provedor_pagamento` quando o processador for escolhido.
+15. Base do percentual da garantia: como se calcula a estimativa do serviço (fase do chamado).
