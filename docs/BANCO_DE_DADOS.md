@@ -61,6 +61,7 @@ Imagem fixada: `postgis/postgis:16-3.6`, digest `sha256:d07ce3f06f657b6516c75114
 | `0006_antifraude_base.sql` | `meio_pagamento`, `dispositivo`, `sinal_risco`, `bloqueio`, `esta_bloqueado()` |
 | `0007_permissoes.sql` | privilégios do `safetycar_app` |
 | `0008_cpf_obrigatorio.sql` | CPF do tomador `NOT NULL` (exigido no cadastro); responsável legal de PJ/MEI (`responsavel_nome`, `responsavel_cpf_cifrado`, `responsavel_cpf_hash`) exigido na aprovação (SC014) |
+| `0009_niveis_verificacao.sql` | `auditoria.papel_bd`; auditoria automática da parametrização (`auditar_parametrizacao`, `bloquear_truncate`, `somente_insercao`); `nivel_verificacao`, `requisito_verificacao`, `nivel_requisito`, `servico_nivel_minimo`, `nivel_verificacao_historico`; `parceiro.nivel_verificacao`; `nivel_minimo_servico()`, `cumpre_nivel_minimo()` |
 
 Privilégios do `safetycar_app` (0007):
 
@@ -72,6 +73,14 @@ Privilégios do `safetycar_app` (0007):
 | `tipo_parceiro`, `servico_catalogo`, `schema_migracao` | SELECT (mudam só por migração) |
 | `vw_parceiro_posicao_valida` | SELECT |
 | `parceiros_proximos`, `esta_bloqueado`, `cnpj_valido`, `cnpj_dv` | EXECUTE |
+
+Privilégios concedidos nas migrações seguintes (cada uma declara os seus):
+
+| Objetos | Privilégio | Migração |
+|---|---|---|
+| `nivel_verificacao`, `requisito_verificacao`, `nivel_requisito`, `servico_nivel_minimo` | SELECT (parametrização) | 0009 |
+| `nivel_verificacao_historico` | SELECT, INSERT (histórico; o trigger atualiza o nível atual) | 0009 |
+| `nivel_minimo_servico`, `cumpre_nivel_minimo` | EXECUTE | 0009 |
 
 **Não há `ALTER DEFAULT PRIVILEGES`.** Toda migração futura que criar tabela, view ou função declara os GRANTs do app. É mais explícito e evita conceder DELETE sem querer.
 
@@ -105,6 +114,21 @@ erDiagram
   parceiro ||--o{ parceiro_area_atuacao : atende
   parceiro_viatura ||--o| parceiro_posicao_atual : "posição atual"
   dispositivo |o--o{ sinal_risco : origina
+```
+
+Parametrização (0009 em diante):
+
+```mermaid
+erDiagram
+  nivel_verificacao ||--o{ nivel_requisito : "exige a partir de"
+  requisito_verificacao ||--o{ nivel_requisito : "é exigido em"
+  servico_catalogo ||--o{ servico_nivel_minimo : "nível mínimo por perfil"
+  nivel_verificacao |o--o{ servico_nivel_minimo : "mínimo"
+  nivel_verificacao ||--o{ tomador : "nível atual"
+  nivel_verificacao ||--o{ parceiro : "nível atual"
+  tomador |o--o{ nivel_verificacao_historico : "histórico"
+  parceiro |o--o{ nivel_verificacao_historico : "histórico"
+  usuario |o--o{ nivel_verificacao_historico : "concede (central)"
 ```
 
 ## Dicionário de dados
@@ -208,7 +232,7 @@ Unicidades: `keycloak_sub`, `email`, `celular_e164`. Trigger `tg_usuario_perfil_
 | cpf_hash | dom_hmac NOT NULL UNIQUE | busca e unicidade do CPF; obrigatório no cadastro (0008) | sim |
 | data_nascimento | date | idade | sim |
 | endereco_id | uuid FK | endereço | sim |
-| nivel_verificacao | smallint 1–3 | 1 = e-mail + 2FA; 2 = celular e CPF; 3 = documento com foto | sim |
+| nivel_verificacao | smallint FK → `nivel_verificacao` | nível atual; começa em 1 e só muda por `nivel_verificacao_historico` (SC011, 0009). **O comentário da 0003 ("1 = e-mail + 2FA; 2 = celular e CPF; 3 = documento com foto") está desatualizado**: os requisitos estão em `nivel_requisito` | sim |
 
 **veiculo**
 
@@ -409,6 +433,43 @@ Carga inicial:
 
 Índice: `ix_bloqueio_tipo_valor`, consultado a cada cadastro, login e pedido. Função `esta_bloqueado(tipo, hash)`.
 
+### Níveis de verificação (0009)
+
+Parametrização: o app só lê; toda alteração é auditada (ver [Parametrização e auditoria](#parametrização-e-auditoria)). Nenhuma destas tabelas tem dado pessoal, exceto o histórico.
+
+**nivel_verificacao**: `nivel` smallint PK (1 a 3), `nome`, `descricao`. Carga: níveis 1, 2 e 3.
+
+**requisito_verificacao**
+
+| Coluna | Tipo | Finalidade |
+|---|---|---|
+| codigo | text PK | `email`, `celular`, `mfa`, `documento_foto`, `selfie`, `meio_pagamento_garantia`, `documentos_parceiro`, `conta_recebimento` |
+| nome | text | rótulo |
+| perfis | text[] | perfis a que pode ser exigido (`meio_pagamento_garantia` só tomador; `documentos_parceiro` e `conta_recebimento` só parceiro) |
+| verificacao_tipo | text CHECK | tipo correspondente em `verificacao_identidade`, quando houver |
+
+**nivel_requisito**: em que nível cada requisito passa a ser exigido, por perfil. PK `(perfil, requisito_codigo)`. O nível N exige todos os requisitos dos níveis 1..N do perfil. Colunas: `perfil`, `requisito_codigo`, `nivel`, `situacao` (`a_definir`/`definido`), `observacao`. Trigger: requisito compatível com o perfil (SC015).
+
+**servico_nivel_minimo**: PK `(servico_codigo, perfil)`; `nivel_minimo` (nulo se e só se `situacao = 'a_definir'`), `observacao`.
+- `nivel_minimo_servico(servico, perfil)`: devolve o nível; **recusa com SC013** se estiver a definir ou não houver linha (22023 para serviço ou perfil inválido).
+- `cumpre_nivel_minimo(perfil, nivel, servico)`: `nivel >= mínimo`; herda a recusa SC013.
+
+**parceiro.nivel_verificacao** (nova): smallint NOT NULL DEFAULT 1, FK → `nivel_verificacao`; mesma regra do tomador.
+
+**nivel_verificacao_historico**: somente inserção (SC010); o app tem SELECT e INSERT.
+
+| Coluna | Tipo | Finalidade | Pessoal |
+|---|---|---|---|
+| tomador_id / parceiro_id | uuid FK | alvo; CHECK: exatamente um | sim |
+| nivel | smallint FK | nível concedido (pode ser redução) | sim |
+| nivel_anterior | smallint | preenchido pelo trigger com o nível atual | sim |
+| origem | text CHECK | `automatica` (cálculo da aplicação), `central` (manual), `carga_inicial` | não |
+| concedido_por | uuid FK | usuário `central` (exigido por trigger); obrigatório se `origem = 'central'` | sim |
+| concedido_em | timestamptz | hora do servidor (`clock_timestamp()`, ignora o enviado) | sim |
+| motivo | text | obrigatório se `origem = 'central'` | pode conter |
+
+O AFTER INSERT atualiza o nível atual. `tomador`/`parceiro` nascem no nível 1 e um UPDATE do nível que não coincida com o registro mais recente é recusado (SC011). O banco **não** confere se os requisitos foram cumpridos: o cálculo é da aplicação.
+
 ### Controle
 
 **schema_migracao**: criada pelo `migrar.sh`: `versao` PK, `arquivo`, `sha256`, `aplicada_em`. Não é dado pessoal.
@@ -428,12 +489,27 @@ As regras ficam no banco para valer para qualquer cliente que venha a existir. E
 | SC007 | aprovação de parceiro sem nenhum tipo | `parceiro_aprovacao()` |
 | SC008 | vínculo com tipo de parceiro inativo | `parceiro_tipo_ativo()` |
 | SC010 | UPDATE, DELETE ou TRUNCATE em `auditoria` | `auditoria_somente_insercao()` |
+| SC010 | também: UPDATE/DELETE/TRUNCATE em tabela somente de inserção (`nivel_verificacao_historico`) e TRUNCATE em parametrização | `somente_insercao()`, `bloquear_truncate()` |
+| SC011 | nível atual de tomador/parceiro diferente do histórico (ou acima de 1 na criação) | `nivel_atual_pelo_historico()` |
+| SC013 | parâmetro "a definir" ou inexistente: nunca é tratado como valor válido (nem zero) | `nivel_minimo_servico()` e funções de consulta seguintes |
 | SC014 | aprovação de parceiro `pj`/`mei` sem CPF do responsável, ou remoção desse CPF com o parceiro aprovado | `parceiro_aprovacao()` (redefinida na 0008), `parceiro_responsavel_mantido()` |
+| SC015 | requisito de verificação incompatível com o perfil | `nivel_requisito_perfil()` |
 | 22023 | parâmetro inválido em `parceiros_proximos` (lat, lng, raio, serviço) | `parceiros_proximos()` |
 
 Notas:
 - A exigência de Susep e de viatura é verificada **no momento da aprovação** (transição para `aprovado`). Rascunho e análise ficam livres para o cadastro ir sendo completado. Um documento que vença ou seja rejeitado depois da aprovação **não** desaprova o parceiro automaticamente: isso é regra de negócio a definir (rotina de vencimento).
 - O dono das tabelas (`safetycar_migrator`) pode remover triggers. A garantia contra alteração da auditoria vale para o app (privilégio + trigger) e para erro operacional, não para o dono agindo de propósito.
+
+## Parametrização e auditoria
+
+- **Tabelas de parametrização** (níveis, requisitos, nível mínimo e, nas migrações seguintes, taxas, garantia e provedores): o `safetycar_app` **só lê**. Alterações só por migração (ver 0012).
+- **"A definir" explícito**: cada linha de valor tem `situacao` (`a_definir`/`definido`). As funções de consulta recusam com **SC013** valor a definir ou ausente; nunca o tratam como zero ou como nível mínimo.
+- **Auditoria automática**: `auditar_parametrizacao()` (AFTER INSERT/UPDATE/DELETE, por linha) grava em `auditoria`:
+  - `acao`: `parametrizacao_insert`, `parametrizacao_update` ou `parametrizacao_delete`;
+  - `entidade` (a tabela), `entidade_id` (quando a PK é `id` uuid), `antes`/`depois` em jsonb;
+  - `ator_usuario_id`: lido de `SET LOCAL safetycar.ator_usuario_id = '<uuid>'`; nulo = sistema/migração;
+  - `papel_bd` (0009): papel do banco que fez a alteração, sempre preenchido pelo trigger (o valor enviado é ignorado). Nulo nas linhas anteriores à 0009.
+- TRUNCATE em parametrização é bloqueado (SC010), porque não passaria pela auditoria por linha.
 
 ## Geoespacial
 
@@ -502,9 +578,11 @@ Registradas aqui; nenhuma foi decidida nesta fase.
 1. **Retenção do histórico de GPS e base legal (LGPD).** Hoje só existe a posição atual.
 2. **Motor de rotas/ETA**: serviço externo ou pgRouting com malha OSM.
 3. ~~Stack de backend e frontend.~~ Decidida: ver `CLAUDE.md` (Stack).
-4. **Valores de carência, taxas e níveis de verificação exigidos por serviço.**
+4. **Valores de carência, taxas e níveis de verificação exigidos por serviço.** A estrutura existe desde a 0009; os valores estão "a definir".
 5. Novos tipos de parceiro propostos, **não criados**: `borracharia`, `auto_eletrica`, `transporte_passageiro` (levar o motorista quando o veículo é guinchado).
 6. `parceiros_proximos` deve também exigir que o ponto esteja na área de atuação declarada?
 7. O que acontece com a aprovação quando um documento obrigatório (ex.: `registro_susep`) vence ou é rejeitado depois de aprovado?
 8. Revisar a lista de `sinal_risco.tipo` e de `bandeira`.
 9. Onde fica a chave de HMAC/cifragem e como é feita a rotação (depende da stack).
+10. Nível inicial: tomador e parceiro nascem no nível 1 (padrão herdado da 0003) antes de cumprir os requisitos do nível 1. Avaliar se deve existir um "nível 0 / não verificado".
+11. O banco não confere se os requisitos do nível foram cumpridos (o cálculo é da aplicação). Avaliar uma checagem no banco para `origem = 'automatica'`.

@@ -52,4 +52,7 @@ SELECT pg_temp.espera_erro($$DELETE FROM auditoria$$,
   'SC010', 'DELETE em auditoria é bloqueado pelo trigger (mesmo para o dono)');
 SELECT pg_temp.espera_erro($$TRUNCATE auditoria$$,
   'SC010', 'TRUNCATE em auditoria é bloqueado pelo trigger');
-SELECT pg_temp.confere((SELECT count(*) = 1 FROM auditoria), 'registro de auditoria continua lá');
+-- (Desde a 0009, a carga da parametrização também gera linhas de auditoria; conta-se só a deste teste.)
+SELECT pg_temp.confere(
+  (SELECT count(*) = 1 FROM auditoria WHERE entidade = 'usuario' AND entidade_id = '00000000-0000-4000-8000-000000000001'),
+  'registro de auditoria continua lá');
