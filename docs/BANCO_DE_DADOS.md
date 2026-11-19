@@ -2,7 +2,7 @@
 
 PostgreSQL 16 + PostGIS 3.6, migrações em SQL puro executadas com `psql`. A API (`apps/api`) conecta como `safetycar_app` e usa SQL puro parametrizado, sem ORM.
 
-Este documento cobre a **base inicial**: identidade, tomador, parceiro tipificado, fundação geoespacial e antifraude base. O modelo de referência original é `docs/safety_car_modelo_dados_v1.sql`; as diferenças estão em [Decisões de modelagem](#decisões-de-modelagem).
+Este documento cobre a **base inicial** (identidade, tomador, parceiro tipificado, fundação geoespacial e antifraude base) e a **parametrização do modelo de negócio** (0008 a 0012: CPF obrigatório, níveis de verificação, taxas, garantia e provedores de pagamento, com valores a definir). O modelo de referência original é `docs/safety_car_modelo_dados_v1.sql`; as diferenças estão em [Decisões de modelagem](#decisões-de-modelagem).
 
 ## Sumário
 1. [Como subir, migrar e testar](#como-subir-migrar-e-testar)
@@ -64,6 +64,7 @@ Imagem fixada: `postgis/postgis:16-3.6`, digest `sha256:d07ce3f06f657b6516c75114
 | `0009_niveis_verificacao.sql` | `auditoria.papel_bd`; auditoria automática da parametrização (`auditar_parametrizacao`, `bloquear_truncate`, `somente_insercao`); `nivel_verificacao`, `requisito_verificacao`, `nivel_requisito`, `servico_nivel_minimo`, `nivel_verificacao_historico`; `parceiro.nivel_verificacao`; `nivel_minimo_servico()`, `cumpre_nivel_minimo()` |
 | `0010_regras_taxa.sql` | extensão `btree_gist`; `vigencia_imutavel()` (SC012); `regra_taxa` com exclusão de vigência por escopo; `regra_taxa_vigente()` |
 | `0011_garantia_pagamento.sql` | `politica_garantia` (vigência imutável) e `politica_garantia_vigente()`; `provedor_pagamento` (capacidades, sem credenciais) |
+| `0012_parametrizacao_carga.sql` | política "app só lê, alteração só por migração" (REVOKE e conferência); carga inicial toda `a_definir` (ver [Carga inicial](#carga-inicial-0012)) |
 
 Privilégios do `safetycar_app` (0007):
 
@@ -139,8 +140,9 @@ erDiagram
   servico_catalogo ||--o{ regra_taxa : "escopo"
   servico_catalogo ||--o{ politica_garantia : "garantia por serviço"
   nivel_verificacao ||--o{ politica_garantia : "nível do tomador"
-  provedor_pagamento
 ```
+
+`provedor_pagamento` não tem relacionamento nesta fase (ver pendência 14).
 
 ## Dicionário de dados
 
@@ -577,7 +579,11 @@ Notas:
 
 ## Parametrização e auditoria
 
-- **Tabelas de parametrização** (níveis, requisitos, nível mínimo e, nas migrações seguintes, taxas, garantia e provedores): o `safetycar_app` **só lê**. Alterações só por migração (ver 0012).
+- **Tabelas de parametrização**: `nivel_verificacao`, `requisito_verificacao`, `nivel_requisito`, `servico_nivel_minimo`, `regra_taxa`, `politica_garantia`, `provedor_pagamento` (e os catálogos `tipo_parceiro` e `servico_catalogo`). O `safetycar_app` **só lê**; a 0012 revoga qualquer escrita e confere isso ao ser aplicada.
+- **Alteração só por migração** (decidido, 0012): cada mudança de valor é um arquivo novo em `db/migrations`, revisado no Git e aplicado pelo `safetycar_migrator`. Para registrar a pessoa responsável na auditoria, a migração começa com `SET LOCAL safetycar.ator_usuario_id = '<uuid do usuário central>';`. Para definir um valor:
+  - nível mínimo e requisitos por nível: `UPDATE … SET situacao = 'definido', nivel_minimo = …`;
+  - taxa e garantia (imutáveis): `UPDATE … SET fim_vigencia = '<instante>'` na linha a definir e `INSERT` da nova linha `definido` com `inicio_vigencia` no mesmo instante.
+- Um papel administrativo (backoffice) fica para depois: criá-lo exige CREATEROLE, que o migrator não tem (seria feito em `db/init` ou numa migração de superusuário, como a 0001).
 - **"A definir" explícito**: cada linha de valor tem `situacao` (`a_definir`/`definido`). As funções de consulta recusam com **SC013** valor a definir ou ausente; nunca o tratam como zero ou como nível mínimo.
 - **Auditoria automática**: `auditar_parametrizacao()` (AFTER INSERT/UPDATE/DELETE, por linha) grava em `auditoria`:
   - `acao`: `parametrizacao_insert`, `parametrizacao_update` ou `parametrizacao_delete`;
@@ -585,6 +591,18 @@ Notas:
   - `ator_usuario_id`: lido de `SET LOCAL safetycar.ator_usuario_id = '<uuid>'`; nulo = sistema/migração;
   - `papel_bd` (0009): papel do banco que fez a alteração, sempre preenchido pelo trigger (o valor enviado é ignorado). Nulo nas linhas anteriores à 0009.
 - TRUNCATE em parametrização é bloqueado (SC010), porque não passaria pela auditoria por linha.
+
+### Carga inicial (0012)
+
+**Nenhum valor de negócio foi decidido.** Tudo entrou com `situacao = 'a_definir'`, valores zerados e `observacao` marcada; as consultas recusam com SC013.
+
+| Tabela | Carga |
+|---|---|
+| `nivel_requisito` | **PROPOSTA**, a definir (`observacao` começa com "PROPOSTA (0012)"). Tomador: N1 e-mail e celular; N2 documento com foto e selfie conferidos com o CPF; N3 meio de pagamento válido para a garantia (2FA **não** é requisito do tomador: é incentivado). Parceiro: N1 e-mail, celular e 2FA (obrigatório para parceiro, a confirmar com o Adailton); N2 documento e selfie do responsável; N3 documentos do tipo e conta de recebimento aprovados |
+| `servico_nivel_minimo` | 7 serviços × 2 perfis, sem nível |
+| `regra_taxa` | nacionais, valor 0, para 7 combinações × 6 componentes (42 linhas): guincho com `guincho_leve` e `guincho_pesado`; mecânica com `mecanica_movel`, `bateria`, `pneu` e `combustivel`; chaveiro com `chaveiro`. Cancelamento entrou em centavos, com a unidade também a definir; `por_km` com `linha_reta` |
+| `politica_garantia` | 7 serviços × 3 níveis × 2 modalidades (42 linhas), `valor_fixo` 0; o cálculo também está a definir |
+| `provedor_pagamento` | vazia (processador não escolhido) |
 
 ## Geoespacial
 
@@ -639,7 +657,7 @@ Em relação ao `safety_car_modelo_dados_v1.sql`:
 | Item | Motivo |
 |---|---|
 | Chamados, chat, avaliações | próxima fase; tudo depende do chamado |
-| Garantia/pré-autorização, taxas, evidências, disputa, repasse | dependem do chamado e de decisões pendentes (modelo de garantia, PSP, taxas) |
+| Pré-autorização e Pix efetivos, cálculo do preço do chamado, evidências, disputa, repasse, integração com o provedor | dependem do chamado. A **parametrização** (taxas, garantia, provedores, níveis) já existe desde as 0009 a 0012, com valores a definir |
 | Pagamentos e Pix no `meio_pagamento` | processador e modelo de garantia não decididos |
 | Histórico de posições / rastreamento | prazo de retenção e base legal (LGPD) não decididos |
 | Produtos e apólices de seguro | módulo de seguros pendente; só o parceiro do tipo `seguros` existe |
