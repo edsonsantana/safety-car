@@ -26,6 +26,16 @@ Plataforma de assistência rodoviária conectada (guincho, mecânica e serviços
   - O app não executa `operador_tem_permissao`, para não sondar quem é aprovador. `auditoria.papel_bd` passou a ser `session_user`.
   - Senha do papel em `SAFETYCAR_CENTRAL_PASSWORD`, só no `.env`. Em volume antigo, o papel é criado com `bash db/scripts/criar_papeis.sh`.
   - O primeiro administrador ainda não foi definido no `safetycar`.
+- **Reajuste de taxas em lote** (migração `0015`, testes `18` e `19`):
+  - `reajuste_taxa` (lote) e `reajuste_taxa_decisao`, ambos somente de inserção; `regra_taxa` ganhou `reajuste_id` e `regra_origem_id`. Funções da Central: simular, solicitar, aprovar, rejeitar e cancelar.
+  - Qualquer operador ativo solicita e simula. Aprova quem tem `aprovar_reajuste_taxa`, nunca o próprio solicitante (autoaprovação desligada).
+  - A aprovação calcula sobre as regras vigentes naquele momento e, numa só transação, encerra as antigas e cria as novas no mesmo instante. Não há reajuste parcial.
+  - Locks: `pg_advisory_xact_lock(150001)` e depois `FOR UPDATE`. O início é lido com `clock_timestamp()` depois dos locks, nunca no passado.
+  - Faixa de ±5000 pb; por km só no percentual; pontos-base só com `inclui_pontos_base`; a regra nacional só com `inclui_nacional` (vale para todas as UFs).
+  - Arredondamento ao centavo com `numeric`, uma vez, sobre o valor final: 0,5 ou mais sobe.
+  - Recusas: "a definir" (SC013), escopo vazio (SC019), lote decidido (SC020), regra futura (SC021), resultado inválido ou nada a alterar (SC022). Valor igual entra como nova versão.
+  - O chamado (fase seguinte) guardará o `regra_taxa.id` de cada componente e os valores usados; a regra antiga continua consultável por data e por id.
+  - Fora do escopo: tela de administração e busca automática de índice (IPCA).
 - **Keycloak de desenvolvimento** no `docker-compose.yml` (26.8.2, `start-dev`, só em 127.0.0.1), com banco próprio (`keycloak-db`). O realm `safetycar-dev` é versionado em `keycloak/realms/safetycar-dev.json`, **sem usuários, senhas nem segredos**. O client `safetycar-web` é público, com PKCE S256 e `aud=safetycar-api`. Detalhes em `docs/KEYCLOAK.md`.
 - **Esqueleto do backend** em `apps/api` (Node 24 + TypeScript estrito; Fastify, `pg`, Zod, `jose` e pino-pretty em dev; testes com `node:test`). Ainda sem regra de negócio: `GET /saude` (SELECT 1) e `GET /eu` (valida o JWT do Keycloak e devolve o `keycloak_sub`).
   - Conecta só como `safetycar_app`: a configuração recusa `safetycar_migrator` e `postgres`, e a subida recusa papel superusuário ou com CREATE no schema `public`.
@@ -79,7 +89,7 @@ npm run dev | test | lint | build                   # em apps/web (build inclui 
 - 2FA incentivado para o tomador; obrigatório para parceiro e Central (proposta, a confirmar).
 - Garantia por pré-autorização no cartão e Pix pré-pago.
 - CPF obrigatório **no cadastro** do tomador (decidido, migração 0008). Para parceiro PJ e MEI, o CPF do responsável é exigido na aprovação do credenciamento.
-- Valores de parametrização (taxas, garantia, níveis mínimos) mudam só por migração nova, nunca pelo app.
+- Valores de parametrização (taxas, garantia, níveis mínimos) mudam só por migração nova, nunca pelo app. Exceção: reajuste de taxas em lote, solicitado e aprovado pela Central nas funções da 0015 (nunca pelo app).
 - Aprovações sensíveis são feitas por quem tem a permissão correspondente vigente (por exemplo, `aprovar_reajuste_taxa`), e não por um "administrador" fixo. Quem solicita não aprova o próprio pedido; a exceção (`permite_autoaprovacao`) está desligada e só muda por migração.
 - Verificação do celular obrigatória.
 - Migrar do protótipo Python/SQLite.
