@@ -53,7 +53,7 @@ Imagem fixada: `postgis/postgis:16-3.6`, digest `sha256:d07ce3f06f657b6516c75114
 
 | Arquivo | Conteúdo |
 |---|---|
-| `0001_extensoes.sql` | `postgis`, `citext`, `pgcrypto` |
+| `0001_extensoes.sql` | `postgis`, `citext`, `pgcrypto` (o `btree_gist` entra na 0010) |
 | `0002_nucleo.sql` | domínios de formato, `cnpj_dv`/`cnpj_valido`, `uf_codigo_ibge`, triggers genéricos (`definir_atualizado_em`, `exige_perfil`), `endereco`, `usuario`, `consentimento`, `verificacao_identidade`, `auditoria` |
 | `0003_tomador.sql` | `tomador`, `veiculo`, `contato_emergencia` |
 | `0004_parceiro.sql` | `tipo_parceiro` (com carga), `parceiro`, `parceiro_tipo`, `parceiro_membro`, `servico_catalogo` (com carga), `parceiro_servico`, `parceiro_viatura`, `parceiro_documento`, `parceiro_conta_recebimento` e as regras por tipo |
@@ -62,6 +62,7 @@ Imagem fixada: `postgis/postgis:16-3.6`, digest `sha256:d07ce3f06f657b6516c75114
 | `0007_permissoes.sql` | privilégios do `safetycar_app` |
 | `0008_cpf_obrigatorio.sql` | CPF do tomador `NOT NULL` (exigido no cadastro); responsável legal de PJ/MEI (`responsavel_nome`, `responsavel_cpf_cifrado`, `responsavel_cpf_hash`) exigido na aprovação (SC014) |
 | `0009_niveis_verificacao.sql` | `auditoria.papel_bd`; auditoria automática da parametrização (`auditar_parametrizacao`, `bloquear_truncate`, `somente_insercao`); `nivel_verificacao`, `requisito_verificacao`, `nivel_requisito`, `servico_nivel_minimo`, `nivel_verificacao_historico`; `parceiro.nivel_verificacao`; `nivel_minimo_servico()`, `cumpre_nivel_minimo()` |
+| `0010_regras_taxa.sql` | extensão `btree_gist`; `vigencia_imutavel()` (SC012); `regra_taxa` com exclusão de vigência por escopo; `regra_taxa_vigente()` |
 
 Privilégios do `safetycar_app` (0007):
 
@@ -81,6 +82,8 @@ Privilégios concedidos nas migrações seguintes (cada uma declara os seus):
 | `nivel_verificacao`, `requisito_verificacao`, `nivel_requisito`, `servico_nivel_minimo` | SELECT (parametrização) | 0009 |
 | `nivel_verificacao_historico` | SELECT, INSERT (histórico; o trigger atualiza o nível atual) | 0009 |
 | `nivel_minimo_servico`, `cumpre_nivel_minimo` | EXECUTE | 0009 |
+| `regra_taxa` | SELECT (parametrização) | 0010 |
+| `regra_taxa_vigente` | EXECUTE | 0010 |
 
 **Não há `ALTER DEFAULT PRIVILEGES`.** Toda migração futura que criar tabela, view ou função declara os GRANTs do app. É mais explícito e evita conceder DELETE sem querer.
 
@@ -129,6 +132,8 @@ erDiagram
   tomador |o--o{ nivel_verificacao_historico : "histórico"
   parceiro |o--o{ nivel_verificacao_historico : "histórico"
   usuario |o--o{ nivel_verificacao_historico : "concede (central)"
+  tipo_parceiro ||--o{ regra_taxa : "escopo"
+  servico_catalogo ||--o{ regra_taxa : "escopo"
 ```
 
 ## Dicionário de dados
@@ -470,6 +475,37 @@ Parametrização: o app só lê; toda alteração é auditada (ver [Parametriza�
 
 O AFTER INSERT atualiza o nível atual. `tomador`/`parceiro` nascem no nível 1 e um UPDATE do nível que não coincida com o registro mais recente é recusado (SC011). O banco **não** confere se os requisitos foram cumpridos: o cálculo é da aplicação.
 
+### Regras de taxa (0010)
+
+**regra_taxa**: um componente de preço por escopo, com vigência. Não é dado pessoal.
+
+| Coluna | Tipo | Finalidade |
+|---|---|---|
+| tipo_parceiro_codigo | text FK NOT NULL | escopo: tipo de parceiro |
+| servico_codigo | text FK NOT NULL | escopo: serviço |
+| uf | dom_uf | escopo: UF; **nulo = nacional** (a regra da UF prevalece) |
+| componente | text CHECK | `base`, `por_km`, `minimo`, `cancelamento`, `nao_comparecimento`, `comissao_plataforma` |
+| unidade | text CHECK | fixa por componente (ver abaixo) |
+| valor | bigint ≥ 0 | **inteiro**: centavos, centavos por km ou pontos-base (1 pb = 0,01%; máx. 10000). Nunca float |
+| base_distancia | text CHECK | só no `por_km` (obrigatória nele): `linha_reta` (padrão, preenchido por trigger), `rodoviaria_snv`, `rodoviaria_osm`, `provedor_externo` |
+| situacao | text CHECK | `a_definir` (valor obrigatoriamente 0) ou `definido` |
+| observacao | text | nota livre |
+| inicio_vigencia, fim_vigencia | timestamptz | vigência `[início, fim)`; fim nulo = em aberto; `fim = início` anula regra futura |
+
+Unidade por componente (CHECK `ck_regra_taxa_unidade`):
+
+| Componente | Unidade |
+|---|---|
+| base, minimo, nao_comparecimento | `centavos` |
+| por_km | `centavos_por_km` |
+| cancelamento | `centavos` **ou** `pontos_base` |
+| comissao_plataforma | `pontos_base` |
+
+- **Sem sobreposição**: `ex_regra_taxa_vigencia` (EXCLUDE GiST, com `btree_gist`) por `(tipo, serviço, coalesce(uf,'*'), componente)` e `tstzrange(início, fim, '[)')`. Violação: 23P01. A restrição também serve de índice para a consulta.
+- **Imutável** (`vigencia_imutavel()`, SC012): só `fim_vigencia` pode ser definido; sem início ou fim no passado; fim definido não é removido; regra encerrada não muda; sem DELETE. Mudar um valor = encerrar a vigente e inserir a próxima começando no fim dela.
+- **`regra_taxa_vigente(tipo, servico, uf, componente, instante = now())`**: devolve a linha da UF ou, se não houver, a nacional. **Recusa com SC013** se não houver regra ou se a aplicável estiver `a_definir`, inclusive quando a da UF está a definir e há nacional definida (não cai na nacional). Parâmetro inválido: 22023. Não há função de cálculo do preço: o cálculo depende do chamado (fase seguinte).
+- Fora desta fase: trechos de rodovia, motor de rotas, integração com Google/Waze. `base_distancia` só registra **qual** distância a regra usará.
+
 ### Controle
 
 **schema_migracao**: criada pelo `migrar.sh`: `versao` PK, `arquivo`, `sha256`, `aplicada_em`. Não é dado pessoal.
@@ -491,7 +527,9 @@ As regras ficam no banco para valer para qualquer cliente que venha a existir. E
 | SC010 | UPDATE, DELETE ou TRUNCATE em `auditoria` | `auditoria_somente_insercao()` |
 | SC010 | também: UPDATE/DELETE/TRUNCATE em tabela somente de inserção (`nivel_verificacao_historico`) e TRUNCATE em parametrização | `somente_insercao()`, `bloquear_truncate()` |
 | SC011 | nível atual de tomador/parceiro diferente do histórico (ou acima de 1 na criação) | `nivel_atual_pelo_historico()` |
-| SC013 | parâmetro "a definir" ou inexistente: nunca é tratado como valor válido (nem zero) | `nivel_minimo_servico()` e funções de consulta seguintes |
+| SC012 | regra com vigência alterada além do fim, fim retroativo ou removido, início no passado, ou exclusão | `vigencia_imutavel()` |
+| SC013 | parâmetro "a definir" ou inexistente: nunca é tratado como valor válido (nem zero) | `nivel_minimo_servico()`, `regra_taxa_vigente()` e funções de consulta seguintes |
+| 23P01 | vigências sobrepostas no mesmo escopo | restrições `EXCLUDE` |
 | SC014 | aprovação de parceiro `pj`/`mei` sem CPF do responsável, ou remoção desse CPF com o parceiro aprovado | `parceiro_aprovacao()` (redefinida na 0008), `parceiro_responsavel_mantido()` |
 | SC015 | requisito de verificação incompatível com o perfil | `nivel_requisito_perfil()` |
 | 22023 | parâmetro inválido em `parceiros_proximos` (lat, lng, raio, serviço) | `parceiros_proximos()` |
@@ -586,3 +624,5 @@ Registradas aqui; nenhuma foi decidida nesta fase.
 9. Onde fica a chave de HMAC/cifragem e como é feita a rotação (depende da stack).
 10. Nível inicial: tomador e parceiro nascem no nível 1 (padrão herdado da 0003) antes de cumprir os requisitos do nível 1. Avaliar se deve existir um "nível 0 / não verificado".
 11. O banco não confere se os requisitos do nível foram cumpridos (o cálculo é da aplicação). Avaliar uma checagem no banco para `origem = 'automatica'`.
+12. Distância rodoviária para cobrança (`rodoviaria_snv`, `rodoviaria_osm`, `provedor_externo`): fase seguinte, pendente de confirmar a licença do SNV e os termos do Google para guardar a distância usada em cobrança. Até lá, só `linha_reta` tem cálculo no banco.
+13. Não há vínculo formal entre tipo de parceiro e serviço (quais serviços cada tipo presta); hoje só a carga de `regra_taxa` reflete isso.
