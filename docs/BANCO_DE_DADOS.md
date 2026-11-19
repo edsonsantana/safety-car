@@ -65,6 +65,7 @@ Imagem fixada: `postgis/postgis:16-3.6`, digest `sha256:d07ce3f06f657b6516c75114
 | `0010_regras_taxa.sql` | extensão `btree_gist`; `vigencia_imutavel()` (SC012); `regra_taxa` com exclusão de vigência por escopo; `regra_taxa_vigente()` |
 | `0011_garantia_pagamento.sql` | `politica_garantia` (vigência imutável) e `politica_garantia_vigente()`; `provedor_pagamento` (capacidades, sem credenciais) |
 | `0012_parametrizacao_carga.sql` | política "app só lê, alteração só por migração" (REVOKE e conferência); carga inicial toda `a_definir` (ver [Carga inicial](#carga-inicial-0012)) |
+| `0013_nivel_zero.sql` | nível 0 "cadastro incompleto": catálogo de 0 a 3, cadastro nasce no 0, CHECK `>= 1` em requisito, nível mínimo e garantia, origem `migracao` no histórico, `cumpre_nivel_minimo` e `politica_garantia_vigente` redefinidas; rebaixa ao 0 quem estava no 1 sem histórico |
 
 Privilégios do `safetycar_app` (0007):
 
@@ -127,19 +128,19 @@ Parametrização (0009 em diante):
 
 ```mermaid
 erDiagram
-  nivel_verificacao ||--o{ nivel_requisito : "exige a partir de"
+  nivel_verificacao ||--o{ nivel_requisito : "exige a partir de (1 a 3)"
   requisito_verificacao ||--o{ nivel_requisito : "é exigido em"
   servico_catalogo ||--o{ servico_nivel_minimo : "nível mínimo por perfil"
-  nivel_verificacao |o--o{ servico_nivel_minimo : "mínimo"
-  nivel_verificacao ||--o{ tomador : "nível atual"
-  nivel_verificacao ||--o{ parceiro : "nível atual"
+  nivel_verificacao |o--o{ servico_nivel_minimo : "mínimo (1 a 3)"
+  nivel_verificacao ||--o{ tomador : "nível atual (0 a 3; nasce no 0)"
+  nivel_verificacao ||--o{ parceiro : "nível atual (0 a 3; nasce no 0)"
   tomador |o--o{ nivel_verificacao_historico : "histórico"
   parceiro |o--o{ nivel_verificacao_historico : "histórico"
   usuario |o--o{ nivel_verificacao_historico : "concede (central)"
   tipo_parceiro ||--o{ regra_taxa : "escopo"
   servico_catalogo ||--o{ regra_taxa : "escopo"
   servico_catalogo ||--o{ politica_garantia : "garantia por serviço"
-  nivel_verificacao ||--o{ politica_garantia : "nível do tomador"
+  nivel_verificacao ||--o{ politica_garantia : "nível do tomador (1 a 3)"
 ```
 
 `provedor_pagamento` não tem relacionamento nesta fase (ver pendência 14).
@@ -245,7 +246,7 @@ Unicidades: `keycloak_sub`, `email`, `celular_e164`. Trigger `tg_usuario_perfil_
 | cpf_hash | dom_hmac NOT NULL UNIQUE | busca e unicidade do CPF; obrigatório no cadastro (0008) | sim |
 | data_nascimento | date | idade | sim |
 | endereco_id | uuid FK | endereço | sim |
-| nivel_verificacao | smallint FK → `nivel_verificacao` | nível atual; começa em 1 e só muda por `nivel_verificacao_historico` (SC011, 0009). **O comentário da 0003 ("1 = e-mail + 2FA; 2 = celular e CPF; 3 = documento com foto") está desatualizado**: os requisitos estão em `nivel_requisito` | sim |
+| nivel_verificacao | smallint FK → `nivel_verificacao` | nível atual, de 0 a 3; **nasce no 0** (cadastro incompleto, 0013) e só muda por `nivel_verificacao_historico` (SC011). O CHECK de 1 a 3 da 0003 foi removido na 0013 (a FK limita os valores). **O comentário da 0003 ("1 = e-mail + 2FA; 2 = celular e CPF; 3 = documento com foto") está superado**: os requisitos estão em `nivel_requisito` | sim |
 
 **veiculo**
 
@@ -450,7 +451,7 @@ Carga inicial:
 
 Parametrização: o app só lê; toda alteração é auditada (ver [Parametrização e auditoria](#parametrização-e-auditoria)). Nenhuma destas tabelas tem dado pessoal, exceto o histórico.
 
-**nivel_verificacao**: `nivel` smallint PK (1 a 3), `nome`, `descricao`. Carga: níveis 1, 2 e 3.
+**nivel_verificacao**: `nivel` smallint PK (**0 a 3**, desde a 0013), `nome`, `descricao`. Carga: 0 "Cadastro incompleto" (0013; sem requisitos, não cumpre o mínimo de nenhum serviço, sem garantia) e 1, 2 e 3.
 
 **requisito_verificacao**
 
@@ -461,27 +462,29 @@ Parametrização: o app só lê; toda alteração é auditada (ver [Parametriza�
 | perfis | text[] | perfis a que pode ser exigido (`meio_pagamento_garantia` só tomador; `documentos_parceiro` e `conta_recebimento` só parceiro) |
 | verificacao_tipo | text CHECK | tipo correspondente em `verificacao_identidade`, quando houver |
 
-**nivel_requisito**: em que nível cada requisito passa a ser exigido, por perfil. PK `(perfil, requisito_codigo)`. O nível N exige todos os requisitos dos níveis 1..N do perfil. Colunas: `perfil`, `requisito_codigo`, `nivel`, `situacao` (`a_definir`/`definido`), `observacao`. Trigger: requisito compatível com o perfil (SC015).
+**nivel_requisito**: em que nível cada requisito passa a ser exigido, por perfil. PK `(perfil, requisito_codigo)`. O nível N exige todos os requisitos dos níveis 1..N do perfil. Colunas: `perfil`, `requisito_codigo`, `nivel` (CHECK `>= 1`: o nível 0 não tem requisitos, 0013), `situacao` (`a_definir`/`definido`), `observacao`. Trigger: requisito compatível com o perfil (SC015).
 
-**servico_nivel_minimo**: PK `(servico_codigo, perfil)`; `nivel_minimo` (nulo se e só se `situacao = 'a_definir'`), `observacao`.
+**servico_nivel_minimo**: PK `(servico_codigo, perfil)`; `nivel_minimo` (nulo se e só se `situacao = 'a_definir'`; CHECK `>= 1`, 0013: mínimo 0 liberaria o serviço para cadastro incompleto e só entra por migração nova e decisão explícita), `observacao`.
 - `nivel_minimo_servico(servico, perfil)`: devolve o nível; **recusa com SC013** se estiver a definir ou não houver linha (22023 para serviço ou perfil inválido).
-- `cumpre_nivel_minimo(perfil, nivel, servico)`: `nivel >= mínimo`; herda a recusa SC013.
+- `cumpre_nivel_minimo(perfil, nivel, servico)`: `nivel >= mínimo`. Nível nulo ou fora do catálogo: 22023 (0013). Mínimo a definir: **SC013, também para o nível 0** (a função nunca responde com parâmetro não decidido). Como todo mínimo definido é `>= 1`, **o nível 0 nunca cumpre**.
 
-**parceiro.nivel_verificacao** (nova): smallint NOT NULL DEFAULT 1, FK → `nivel_verificacao`; mesma regra do tomador.
+**parceiro.nivel_verificacao** (nova): smallint NOT NULL DEFAULT **0** (era 1 na 0009; 0013), FK → `nivel_verificacao`; mesma regra do tomador.
 
 **nivel_verificacao_historico**: somente inserção (SC010); o app tem SELECT e INSERT.
 
 | Coluna | Tipo | Finalidade | Pessoal |
 |---|---|---|---|
 | tomador_id / parceiro_id | uuid FK | alvo; CHECK: exatamente um | sim |
-| nivel | smallint FK | nível concedido (pode ser redução) | sim |
+| nivel | smallint FK | nível concedido, de 0 a 3 (pode ser redução, inclusive ao 0) | sim |
 | nivel_anterior | smallint | preenchido pelo trigger com o nível atual | sim |
-| origem | text CHECK | `automatica` (cálculo da aplicação), `central` (manual), `carga_inicial` | não |
+| origem | text CHECK | `automatica` (cálculo da aplicação), `central` (manual), `carga_inicial` (importação da v8), `migracao` (ajuste feito por migração, 0013) | não |
 | concedido_por | uuid FK | usuário `central` (exigido por trigger); obrigatório se `origem = 'central'` | sim |
 | concedido_em | timestamptz | hora do servidor (`clock_timestamp()`, ignora o enviado) | sim |
 | motivo | text | obrigatório se `origem = 'central'` | pode conter |
 
-O AFTER INSERT atualiza o nível atual. `tomador`/`parceiro` nascem no nível 1 e um UPDATE do nível que não coincida com o registro mais recente é recusado (SC011). O banco **não** confere se os requisitos foram cumpridos: o cálculo é da aplicação.
+O AFTER INSERT atualiza o nível atual. `tomador`/`parceiro` **nascem no nível 0** (desde a 0013; antes, no 1) e um UPDATE do nível que não coincida com o registro mais recente é recusado (SC011). A promoção ao nível 1 só acontece por uma linha de histórico. O banco **não** confere se os requisitos foram cumpridos: o cálculo é da aplicação.
+
+Na aplicação da 0013, quem estava no nível 1 **sem nenhuma linha de histórico** (só pelo padrão antigo) recebeu uma nova linha `origem = 'migracao'` para o nível 0. Quem tinha histórico manteve o nível. Nenhuma linha existente foi alterada.
 
 ### Regras de taxa (0010)
 
@@ -521,7 +524,7 @@ Unidade por componente (CHECK `ck_regra_taxa_unidade`):
 | Coluna | Tipo | Finalidade |
 |---|---|---|
 | servico_codigo | text FK | serviço |
-| nivel_verificacao | smallint FK | nível do tomador |
+| nivel_verificacao | smallint FK | nível do tomador; CHECK `>= 1` (o nível 0 não tem garantia, 0013) |
 | modalidade | text CHECK | `pre_autorizacao_cartao`, `pix_pre_pago` |
 | calculo | text CHECK | `valor_fixo` (usa `valor_centavos`) ou `percentual` (usa `percentual_bp`); CHECK: exatamente um dos dois |
 | valor_centavos | bigint ≥ 0 | valor fixo em centavos |
@@ -530,7 +533,7 @@ Unidade por componente (CHECK `ck_regra_taxa_unidade`):
 | inicio_vigencia, fim_vigencia | timestamptz | mesma regra da `regra_taxa` |
 
 - `ex_garantia_vigencia`: sem sobreposição por `(serviço, nível, modalidade)` (23P01). Imutável por `vigencia_imutavel()` (SC012).
-- `politica_garantia_vigente(servico, nivel, modalidade, instante = now())`: **recusa com SC013** se não houver política ou se estiver a definir (nunca devolve garantia zero); 22023 para parâmetro inválido.
+- `politica_garantia_vigente(servico, nivel, modalidade, instante = now())`: **recusa com SC013** se não houver política ou se estiver a definir (nunca devolve garantia zero); 22023 para parâmetro inválido **e para o nível 0** (não se aplica, 0013).
 
 **provedor_pagamento**: catálogo de processadores e o que cada um suporta. **Sem chave, segredo, token, credencial nem URL de callback** (um teste confere os nomes das colunas): isso fica na configuração do backend, fora do Git.
 
@@ -565,7 +568,7 @@ As regras ficam no banco para valer para qualquer cliente que venha a existir. E
 | SC008 | vínculo com tipo de parceiro inativo | `parceiro_tipo_ativo()` |
 | SC010 | UPDATE, DELETE ou TRUNCATE em `auditoria` | `auditoria_somente_insercao()` |
 | SC010 | também: UPDATE/DELETE/TRUNCATE em tabela somente de inserção (`nivel_verificacao_historico`) e TRUNCATE em parametrização | `somente_insercao()`, `bloquear_truncate()` |
-| SC011 | nível atual de tomador/parceiro diferente do histórico (ou acima de 1 na criação) | `nivel_atual_pelo_historico()` |
+| SC011 | nível atual de tomador/parceiro diferente do histórico (ou diferente de 0 na criação, desde a 0013) | `nivel_atual_pelo_historico()` |
 | SC012 | regra com vigência alterada além do fim, fim retroativo ou removido, início no passado, ou exclusão | `vigencia_imutavel()` |
 | SC013 | parâmetro "a definir" ou inexistente: nunca é tratado como valor válido (nem zero) | `nivel_minimo_servico()`, `regra_taxa_vigente()` e funções de consulta seguintes |
 | 23P01 | vigências sobrepostas no mesmo escopo | restrições `EXCLUDE` |
@@ -650,6 +653,12 @@ Em relação ao `safety_car_modelo_dados_v1.sql`:
 - `sinal_risco.tipo`: lista inicial **proposta**, para revisão (`multiplas_contas_dispositivo`, `dado_em_bloqueio`, `cartao_recusado`, `localizacao_inconsistente`, `cadastro_acelerado`, `outro`).
 - O app **não apaga** `usuario`, `consentimento`, `verificacao_identidade` nem `sinal_risco` (ver privilégios).
 - **CPF do tomador no cadastro** (decidido, 0008): `cpf_cifrado` e `cpf_hash` `NOT NULL`. A linha de `tomador` só existe com CPF; o `usuario` pode existir antes (cadastro em etapas).
+- **Nível 0 "cadastro incompleto"** (decidido, 0013). O nível 1 significa e-mail e celular verificados, e nascer nele poderia liberar serviços para quem não verificou nada. Por isso:
+  - o cadastro nasce no 0;
+  - o 0 não tem requisitos, não pode ser nível mínimo de serviço e não tem garantia (CHECK `>= 1`);
+  - "a definir" continua SC013 mesmo para o nível 0;
+  - garantia consultada para o nível 0 dá 22023 (não se aplica).
+  Fica superado o comentário da 0003 sobre os níveis.
 - **CPF do responsável de PJ/MEI na aprovação** (decidido, 0008), como o Susep: o rascunho fica livre. Em parceiro já aprovado, o responsável pode ser trocado, não removido. Mesma chave de HMAC e normalização, então um `bloqueio` `cpf_hash` também alcança o responsável.
 
 ## Fora desta fase e por quê
@@ -677,7 +686,7 @@ Registradas aqui; nenhuma foi decidida nesta fase.
 7. O que acontece com a aprovação quando um documento obrigatório (ex.: `registro_susep`) vence ou é rejeitado depois de aprovado?
 8. Revisar a lista de `sinal_risco.tipo` e de `bandeira`.
 9. Onde fica a chave de HMAC/cifragem e como é feita a rotação (depende da stack).
-10. Nível inicial: tomador e parceiro nascem no nível 1 (padrão herdado da 0003) antes de cumprir os requisitos do nível 1. Avaliar se deve existir um "nível 0 / não verificado".
+10. ~~Nível inicial: tomador e parceiro nascem no nível 1 (padrão herdado da 0003) antes de cumprir os requisitos do nível 1.~~ **Resolvida na 0013**: nível 0 "cadastro incompleto"; todo cadastro nasce no 0.
 11. O banco não confere se os requisitos do nível foram cumpridos (o cálculo é da aplicação). Avaliar uma checagem no banco para `origem = 'automatica'`.
 12. Distância rodoviária para cobrança (`rodoviaria_snv`, `rodoviaria_osm`, `provedor_externo`): fase seguinte, pendente de confirmar a licença do SNV e os termos do Google para guardar a distância usada em cobrança. Até lá, só `linha_reta` tem cálculo no banco.
 13. Não há vínculo formal entre tipo de parceiro e serviço (quais serviços cada tipo presta); hoje só a carga de `regra_taxa` reflete isso.

@@ -11,13 +11,14 @@ Plataforma de assistência rodoviária conectada (guincho, mecânica e serviços
   - Migração aplicada não se edita: o `migrar.sh` confere o sha256. Toda migração nova declara os GRANTs do `safetycar_app` (não há default privileges).
   - Já decidido nesta fase: `tipo_parceiro` com `exige_viatura` e `permite_viatura` (guincho exige; mecânica e chaveiro permitem; seguros não); registro Susep exigido na aprovação; CNPJ numérico e alfanumérico com DV; área de atuação por centro + raio.
   - Fora do Git até revisão: zips, docx, pdf, html, png, `files/` e `docs/README.md` (README do protótipo v5, com senhas de demonstração).
-- **Parametrização do modelo de negócio** (migrações `0008` a `0012`, testes `09` a `13`):
+- **Parametrização do modelo de negócio** (migrações `0008` a `0013`, testes `09` a `15`):
   - `0008`: CPF do tomador obrigatório no cadastro (NOT NULL); CPF do responsável de PJ/MEI exigido na aprovação (sem UNIQUE).
   - `0009`: níveis de verificação (catálogo, requisitos por nível e perfil, nível mínimo por serviço e perfil); o nível atual de tomador e parceiro só muda pelo histórico (`nivel_verificacao_historico`, somente inserção).
   - `0010`: `regra_taxa` por tipo de parceiro, serviço e UF (nula = nacional), em inteiros (centavos, centavos/km, pontos-base); vigência sem sobreposição (`btree_gist`) e imutável (só o fim é definido; mudança = nova linha); `base_distancia` padrão `linha_reta`.
   - `0011`: `politica_garantia` (pré-autorização ou Pix; fixo ou percentual; por serviço e nível) e `provedor_pagamento` (capacidades e ambiente, **sem credenciais**).
   - `0012`: o app **só lê** a parametrização; **alteração só por migração**, sempre auditada (`auditoria.papel_bd`, `safetycar.ator_usuario_id`). Carga inicial toda `a_definir`; os requisitos por nível são **proposta**.
   - "A definir" nunca vale como zero nem como nível: as consultas (`nivel_minimo_servico`, `regra_taxa_vigente`, `politica_garantia_vigente`) recusam com SC013.
+  - `0013`: nível 0 "cadastro incompleto". Tomador e parceiro nascem no 0 e só sobem por linha no histórico. O 0 não cumpre o mínimo de nenhum serviço, não tem requisitos nem garantia (CHECK `>= 1`; garantia no 0 dá 22023). Origem `migracao` no histórico. O comentário da 0003 sobre os níveis está superado.
 - **Keycloak de desenvolvimento** no `docker-compose.yml` (26.8.2, `start-dev`, só em 127.0.0.1), com banco próprio (`keycloak-db`). O realm `safetycar-dev` é versionado em `keycloak/realms/safetycar-dev.json`, **sem usuários, senhas nem segredos**. O client `safetycar-web` é público, com PKCE S256 e `aud=safetycar-api`. Detalhes em `docs/KEYCLOAK.md`.
 - **Esqueleto do backend** em `apps/api` (Node 24 + TypeScript estrito; Fastify, `pg`, Zod, `jose` e pino-pretty em dev; testes com `node:test`). Ainda sem regra de negócio: `GET /saude` (SELECT 1) e `GET /eu` (valida o JWT do Keycloak e devolve o `keycloak_sub`).
   - Conecta só como `safetycar_app`: a configuração recusa `safetycar_migrator` e `postgres`, e a subida recusa papel superusuário ou com CREATE no schema `public`.

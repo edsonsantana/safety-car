@@ -11,10 +11,10 @@ INSERT INTO parceiro (id, tipo_pessoa, cpf_cifrado, cpf_hash, nome, email_comerc
    '[TESTE] Parceiro Nível', 'niv-p@exemplo.invalid', '+5511900000911');
 
 -- ---------- Catálogos ----------
-SELECT pg_temp.confere((SELECT array_agg(nivel ORDER BY nivel) = '{1,2,3}' FROM nivel_verificacao),
-  'catálogo com os níveis 1, 2 e 3');
+SELECT pg_temp.confere((SELECT array_agg(nivel ORDER BY nivel) = '{0,1,2,3}' FROM nivel_verificacao),
+  'catálogo com os níveis 0 (cadastro incompleto, 0013), 1, 2 e 3');
 SELECT pg_temp.espera_erro($$INSERT INTO nivel_verificacao (nivel, nome) VALUES (4, 'x')$$,
-  '23514', 'nível fora de 1 a 3 é rejeitado');
+  '23514', 'nível fora de 0 a 3 é rejeitado');
 SELECT pg_temp.confere((SELECT count(*) = 8 FROM requisito_verificacao),
   'catálogo de requisitos com 8 itens');
 
@@ -74,7 +74,7 @@ SELECT pg_temp.espera_erro($$
   VALUES ('00000000-0000-4000-8000-000000000a03', gen_random_uuid(), 'niv-t3@exemplo.invalid', 'tomador');
   INSERT INTO tomador (usuario_id, nome_completo, cpf_cifrado, cpf_hash, nivel_verificacao)
   VALUES ('00000000-0000-4000-8000-000000000a03', '[TESTE] Já nível 3', '\x03', pg_temp.hmac_teste('52998224725'), 3)$$,
-  'SC011', 'tomador não nasce acima do nível 1');
+  'SC011', 'tomador não nasce acima do nível 0 (desde a 0013)');
 SELECT pg_temp.espera_erro($$
   UPDATE tomador SET nivel_verificacao = 3 WHERE usuario_id = '00000000-0000-4000-8000-000000000a01'$$,
   'SC011', 'nível do tomador não muda por UPDATE direto');
@@ -90,7 +90,7 @@ SELECT pg_temp.confere(
   (SELECT nivel_verificacao = 2 FROM tomador WHERE usuario_id = '00000000-0000-4000-8000-000000000a01'),
   'nível atual do tomador acompanha o histórico');
 SELECT pg_temp.confere(
-  (SELECT nivel_anterior = 1 AND concedido_em > now() - interval '1 minute'
+  (SELECT nivel_anterior = 0 AND concedido_em > now() - interval '1 minute'
      FROM nivel_verificacao_historico WHERE tomador_id = '00000000-0000-4000-8000-000000000a01'),
   'nível anterior e hora vêm do servidor (valores enviados são ignorados)');
 
