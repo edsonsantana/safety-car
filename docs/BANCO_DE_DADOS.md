@@ -2,7 +2,7 @@
 
 PostgreSQL 16 + PostGIS 3.6, migrações em SQL puro executadas com `psql`. A API (`apps/api`) conecta como `safetycar_app` e usa SQL puro parametrizado, sem ORM.
 
-Este documento cobre a **base inicial** (identidade, tomador, parceiro tipificado, fundação geoespacial e antifraude base) e a **parametrização do modelo de negócio** (0008 a 0012: CPF obrigatório, níveis de verificação, taxas, garantia e provedores de pagamento, com valores a definir). O modelo de referência original é `docs/safety_car_modelo_dados_v1.sql`; as diferenças estão em [Decisões de modelagem](#decisões-de-modelagem).
+Este documento cobre a **base inicial** (identidade, tomador, parceiro tipificado, fundação geoespacial e antifraude base) e a **parametrização do modelo de negócio** (0008 a 0013: CPF obrigatório, níveis de verificação, taxas, garantia e provedores de pagamento, com valores a definir), além de **operadores e permissões da Central** (0014). O modelo de referência original é `docs/safety_car_modelo_dados_v1.sql`; as diferenças estão em [Decisões de modelagem](#decisões-de-modelagem).
 
 ## Sumário
 1. [Como subir, migrar e testar](#como-subir-migrar-e-testar)
@@ -26,12 +26,17 @@ Pré-requisitos: Docker Desktop rodando e Git Bash (no Windows). Nada é instala
 ```bash
 cp .env.example .env          # troque TODOS os valores (senhas fortes)
 docker compose up -d          # sobe o banco; espere "healthy" em: docker compose ps
+bash db/scripts/criar_papeis.sh  # só em volume antigo: cria safetycar_central (0014)
 bash db/scripts/migrar.sh     # aplica as migrações pendentes no banco "safetycar"
 bash db/scripts/testar.sh     # recria "safetycar_teste" do zero, migra duas vezes e roda db/tests
 ```
 
 - `migrar.sh [banco]` aplica cada migração numa transação única e grava `versao`, `arquivo` e `sha256` em `schema_migracao`. Uma migração já aplicada é pulada. **Se o arquivo de uma migração aplicada mudar, o script para:** migração aplicada não se edita; cria-se outra.
 - `testar.sh` não toca no banco de desenvolvimento. Cada arquivo de teste roda em `BEGIN … ROLLBACK`. Falha = `FALHOU: …`, e o script sai com código ≠ 0.
+  - Sufixo do arquivo de teste: `_app.sql` roda como `safetycar_app`; `_central.sql` prepara dados como `postgres` até a linha `-- @como_central` e, dali em diante, roda como `safetycar_central` (`SET SESSION AUTHORIZATION`, então `session_user` é o papel da Central); os demais rodam como `safetycar_migrator`.
+  - O `testar.sh` exige que o papel `safetycar_central` exista.
+  - **Não há teste de concorrência com duas sessões**: os testes rodam numa sessão só. A serialização das concessões (locks do trigger, inclusive "duas concessões iniciais simultâneas terminam em SC018, nunca em 40P01") está no código, mas não é exercitada pelo `testar.sh`.
+- `criar_papeis.sh`: cria, num volume **já existente**, os papéis que vieram depois do volume (hoje o `safetycar_central`). É idempotente: papel existente mantém a senha e só reafirma os atributos. Lê `SAFETYCAR_CENTRAL_PASSWORD` do `.env` sem executá-lo, nunca imprime a senha nem a passa na linha de comando (vai ao `psql` do contêiner por variável de ambiente e `\getenv`), e recusa o valor de exemplo (`trocar-*`) e senha com menos de 16 caracteres. Em volume novo, quem cria o papel é o `db/init/01_papeis.sh`, que exige a variável.
 - Conexão a partir do computador: `127.0.0.1:${DB_PORTA}`, banco `safetycar`, usuário `safetycar_app` (ou `safetycar_migrator`) e a senha do `.env`. A porta só é publicada em 127.0.0.1.
 - Recomeçar do zero apaga todos os dados locais: `docker compose down -v` e depois `docker compose up -d`. O script `db/init/01_papeis.sh` só roda quando o volume é novo.
 
@@ -44,6 +49,7 @@ Imagem fixada: `postgis/postgis:16-3.6`, digest `sha256:d07ce3f06f657b6516c75114
 | `postgres` | superusuário do contêiner | administração local; aplica **só** a `0001` (o PostGIS não é extensão *trusted*) |
 | `safetycar_migrator` | LOGIN, sem superusuário, dono do banco e do schema `public` | aplica as migrações `0002` em diante |
 | `safetycar_app` | LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOINHERIT | aplicação: DML, sem DDL (ver [0007](#migrações)) |
+| `safetycar_central` | LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOINHERIT, NOBYPASSRLS | **só o backend da Central, para ações sensíveis** (0014): lê o cadastro de operadores e permissões e age apenas pelas funções liberadas a ele; nenhuma escrita direta. Senha em `SAFETYCAR_CENTRAL_PASSWORD`, só no `.env` |
 
 - As senhas vêm do `.env` (fora do Git). O `.env.example` só tem valores fictícios.
 - Dentro do contêiner, conexões locais usam `trust` (padrão da imagem oficial). Pela rede (inclusive a partir do computador), a senha é exigida (`scram-sha-256`).
@@ -66,6 +72,7 @@ Imagem fixada: `postgis/postgis:16-3.6`, digest `sha256:d07ce3f06f657b6516c75114
 | `0011_garantia_pagamento.sql` | `politica_garantia` (vigência imutável) e `politica_garantia_vigente()`; `provedor_pagamento` (capacidades, sem credenciais) |
 | `0012_parametrizacao_carga.sql` | política "app só lê, alteração só por migração" (REVOKE e conferência); carga inicial toda `a_definir` (ver [Carga inicial](#carga-inicial-0012)) |
 | `0013_nivel_zero.sql` | nível 0 "cadastro incompleto": catálogo de 0 a 3, cadastro nasce no 0, CHECK `>= 1` em requisito, nível mínimo e garantia, origem `migracao` no histórico, `cumpre_nivel_minimo` e `politica_garantia_vigente` redefinidas; rebaixa ao 0 quem estava no 1 sem histórico |
+| `0014_operadores_permissoes.sql` | papel `safetycar_central` (conferido, não criado); `auditoria.papel_bd` = `session_user`; `permissao_central` (catálogo), `operador_central`, `permissao_concessao` e `permissao_revogacao` (somente inserção), `vw_permissao_vigente`; `operador_tem_permissao()`; funções da Central (`cadastrar_operador`, `definir_operador_ativo`, `conceder_permissao`, `revogar_permissao`) e manuais do migrator (`conceder_permissao_inicial`, `revogar_permissao_manual`) |
 
 Privilégios do `safetycar_app` (0007):
 
@@ -89,6 +96,19 @@ Privilégios concedidos nas migrações seguintes (cada uma declara os seus):
 | `regra_taxa_vigente` | EXECUTE | 0010 |
 | `politica_garantia`, `provedor_pagamento` | SELECT (parametrização) | 0011 |
 | `politica_garantia_vigente` | EXECUTE | 0011 |
+| `permissao_central` | SELECT (catálogo, sem dado de pessoa) | 0014 |
+| `operador_tem_permissao` e demais funções da 0014 | **nenhum** (sem EXECUTE; ver [decisões](#decisões-de-modelagem)) | 0014 |
+
+Privilégios do `safetycar_central` (0014):
+
+| Objetos | Privilégio |
+|---|---|
+| banco | CONNECT, TEMPORARY; schema `public`: USAGE |
+| `permissao_central`, `operador_central`, `permissao_concessao`, `permissao_revogacao`, `vw_permissao_vigente` | SELECT |
+| `operador_tem_permissao`, `cadastrar_operador`, `definir_operador_ativo`, `conceder_permissao`, `revogar_permissao` | EXECUTE |
+| demais tabelas (inclusive `usuario` e `auditoria`) | nenhum |
+
+`conceder_permissao_inicial` e `revogar_permissao_manual` não têm GRANT: só o dono (`safetycar_migrator`) e o superusuário as executam. Todas as funções da 0014 que podem ser chamadas têm `REVOKE … FROM PUBLIC`.
 
 **Não há `ALTER DEFAULT PRIVILEGES`.** Toda migração futura que criar tabela, view ou função declara os GRANTs do app. É mais explícito e evita conceder DELETE sem querer.
 
@@ -144,6 +164,18 @@ erDiagram
 ```
 
 `provedor_pagamento` não tem relacionamento nesta fase (ver pendência 14).
+
+Operadores e permissões da Central (0014):
+
+```mermaid
+erDiagram
+  usuario ||--o| operador_central : "é (perfil central)"
+  operador_central ||--o{ permissao_concessao : "recebe"
+  operador_central |o--o{ permissao_concessao : "concede (nulo na inicial)"
+  permissao_central ||--o{ permissao_concessao : "é concedida"
+  permissao_concessao ||--o| permissao_revogacao : "revogada por"
+  operador_central |o--o{ permissao_revogacao : "revoga (nulo na manual)"
+```
 
 ## Dicionário de dados
 
@@ -548,6 +580,64 @@ Unidade por componente (CHECK `ck_regra_taxa_unidade`):
 
 Fora desta fase: pagamento efetivo, pré-autorização real, repasse e integração com o provedor.
 
+### Operadores e permissões da Central (0014)
+
+**permissao_central**: catálogo de permissões de aprovador, uma por tipo de alteração sensível. É parametrização: só por migração, com auditoria. Não é dado pessoal.
+
+| Coluna | Tipo | Finalidade |
+|---|---|---|
+| codigo | text PK | `conceder_permissao` (gerencia operadores e permissões) e `aprovar_reajuste_taxa` (0015). Extensível por migração (ex.: `aprovar_bloqueio`, `aprovar_nivel_manual`) |
+| nome, descricao | text | rótulo e explicação |
+| ativo | boolean | permissão inativa não vale para ninguém e não é concedida |
+| permite_autoaprovacao | boolean | exceção à regra "quem solicita não aprova o próprio pedido"; **desligada** em `aprovar_reajuste_taxa`; CHECK: nunca ligada em `conceder_permissao` |
+
+**operador_central**: quem opera a Central.
+
+| Coluna | Tipo | Finalidade | Pessoal |
+|---|---|---|---|
+| usuario_id | uuid PK/FK | usuário de perfil `central` (exigido por trigger) | sim |
+| ativo | boolean | inativo perde todas as permissões, sem tocar no histórico | sim |
+
+Não é excluído (só desativado, SC010). O usuário que é operador não troca de perfil (SC001). Muda só pelas funções `cadastrar_operador` e `definir_operador_ativo`, com auditoria e motivo.
+
+**permissao_concessao** (somente inserção, SC010):
+
+| Coluna | Tipo | Finalidade | Pessoal |
+|---|---|---|---|
+| operador_id | uuid FK | quem recebeu | sim |
+| permissao_codigo | text FK | permissão | não |
+| concedida_por | uuid FK | quem concedeu; nulo só se `origem = 'inicial'` | sim |
+| concedida_em | timestamptz | hora do servidor (`clock_timestamp()`, ignora o enviado) | sim |
+| motivo | text | obrigatório | pode conter |
+| origem | text CHECK | `operador` ou `inicial` (só de `conceder_permissao`) | não |
+| papel_bd | text | `session_user` de quem gravou | não |
+
+**permissao_revogacao** (somente inserção, SC010): `concessao_id` UNIQUE FK, `revogada_por` (nulo só se `origem = 'manual'`), `revogada_em` (hora do servidor), `motivo` (obrigatório), `origem` (`operador` ou `manual`), `papel_bd`.
+
+**Permissão vigente** = concessão sem revogação; não há campo editável. A permissão é **efetiva** quando o operador está ativo, o usuário está `ativo` com perfil `central` e a permissão está ativa no catálogo.
+- `operador_tem_permissao(usuario, permissao) → boolean`: SECURITY DEFINER, só leitura, devolve apenas o boolean; 22023 para permissão inexistente. EXECUTE só para o migrator e para o `safetycar_central`.
+- `vw_permissao_vigente` (`security_invoker`): concessões sem revogação, com a coluna `efetiva`.
+
+**Regras** (nos triggers, valem para qualquer escritor, inclusive o migrator):
+- conceder a si mesmo: SC017;
+- quem concede precisa ter `conceder_permissao` efetiva: SC016;
+- quem recebe precisa ser operador ativo: SC016;
+- permissão inativa: 22023;
+- concessão repetida enquanto vigente: SC018;
+- concessão inicial: só de `conceder_permissao` (23514) e só quando **não existe nenhuma** concessão de `conceder_permissao` sem revogação (SC018);
+- revogar a própria permissão é permitido, porque só reduz poder; revogar a de outro exige `conceder_permissao` (SC016); revogar o que não está vigente: SC018.
+
+**Locks**: a concessão trava a linha do operador (`FOR UPDATE`) e a linha do catálogo, já no modo final: `FOR UPDATE` na inicial e `FOR SHARE` nas demais. Nunca `FOR SHARE` seguido de `FOR UPDATE` na mesma linha, para que duas iniciais simultâneas terminem em SC018, e não em deadlock (40P01). A revogação trava a concessão, e a `UNIQUE (concessao_id)` é a última barreira.
+
+**Funções da Central** (SECURITY DEFINER, `SET search_path = public, pg_temp`, EXECUTE só para o `safetycar_central`): `cadastrar_operador(ator, usuario, motivo)`, `definir_operador_ativo(ator, operador, ativo, motivo)`, `conceder_permissao(ator, operador, permissao, motivo)`, `revogar_permissao(ator, operador, permissao, motivo)`.
+- Ninguém cadastra, ativa ou desativa a si mesmo (SC017).
+- Motivo obrigatório (22023).
+- O ator é gravado com `set_config('safetycar.ator_usuario_id', …, is_local = true)` (equivale a `SET LOCAL`), e o **valor anterior é restaurado no fim**: uma chamada aninhada não apaga o ator de quem a chamou.
+
+**Funções manuais do migrator** (sem GRANT; chamadas à mão, via `psql`):
+- `conceder_permissao_inicial(usuario, motivo)`: cadastra o operador, se preciso, e concede `conceder_permissao` com `origem = 'inicial'`. Fica na auditoria com `papel_bd = safetycar_migrator` e sem ator.
+- `revogar_permissao_manual(operador, permissao, motivo)`: revogação de emergência, com `origem = 'manual'`.
+
 ### Controle
 
 **schema_migracao**: criada pelo `migrar.sh`: `versao` PK, `arquivo`, `sha256`, `aplicada_em`. Não é dado pessoal.
@@ -567,13 +657,16 @@ As regras ficam no banco para valer para qualquer cliente que venha a existir. E
 | SC007 | aprovação de parceiro sem nenhum tipo | `parceiro_aprovacao()` |
 | SC008 | vínculo com tipo de parceiro inativo | `parceiro_tipo_ativo()` |
 | SC010 | UPDATE, DELETE ou TRUNCATE em `auditoria` | `auditoria_somente_insercao()` |
-| SC010 | também: UPDATE/DELETE/TRUNCATE em tabela somente de inserção (`nivel_verificacao_historico`) e TRUNCATE em parametrização | `somente_insercao()`, `bloquear_truncate()` |
+| SC010 | também: UPDATE/DELETE/TRUNCATE em tabela somente de inserção (`nivel_verificacao_historico`, `permissao_concessao`, `permissao_revogacao`), TRUNCATE em parametrização e exclusão de operador da Central | `somente_insercao()`, `bloquear_truncate()`, `operador_sem_exclusao()` |
 | SC011 | nível atual de tomador/parceiro diferente do histórico (ou diferente de 0 na criação, desde a 0013) | `nivel_atual_pelo_historico()` |
 | SC012 | regra com vigência alterada além do fim, fim retroativo ou removido, início no passado, ou exclusão | `vigencia_imutavel()` |
 | SC013 | parâmetro "a definir" ou inexistente: nunca é tratado como valor válido (nem zero) | `nivel_minimo_servico()`, `regra_taxa_vigente()` e funções de consulta seguintes |
 | 23P01 | vigências sobrepostas no mesmo escopo | restrições `EXCLUDE` |
 | SC014 | aprovação de parceiro `pj`/`mei` sem CPF do responsável, ou remoção desse CPF com o parceiro aprovado | `parceiro_aprovacao()` (redefinida na 0008), `parceiro_responsavel_mantido()` |
 | SC015 | requisito de verificação incompatível com o perfil | `nivel_requisito_perfil()` |
+| SC016 | ator sem a permissão exigida (ou não é operador ativo), ou concessão a quem não é operador ativo | `exige_permissao()`, `permissao_concessao_validar()`, `permissao_revogacao_validar()` |
+| SC017 | conceder permissão a si mesmo, ou cadastrar, ativar ou desativar a si mesmo | `permissao_concessao_validar()`, `cadastrar_operador()`, `definir_operador_ativo()` |
+| SC018 | concessão já vigente; revogação sem concessão vigente ou já revogada; concessão inicial com concessão de `conceder_permissao` ainda sem revogação | `permissao_concessao_validar()`, `permissao_revogacao_validar()`, `revogar_permissao()`, `revogar_permissao_manual()` |
 | 22023 | parâmetro inválido em `parceiros_proximos` (lat, lng, raio, serviço) | `parceiros_proximos()` |
 
 Notas:
@@ -592,7 +685,7 @@ Notas:
   - `acao`: `parametrizacao_insert`, `parametrizacao_update` ou `parametrizacao_delete`;
   - `entidade` (a tabela), `entidade_id` (quando a PK é `id` uuid), `antes`/`depois` em jsonb;
   - `ator_usuario_id`: lido de `SET LOCAL safetycar.ator_usuario_id = '<uuid>'`; nulo = sistema/migração;
-  - `papel_bd` (0009): papel do banco que fez a alteração, sempre preenchido pelo trigger (o valor enviado é ignorado). Nulo nas linhas anteriores à 0009.
+  - `papel_bd` (0009): papel do banco que fez a alteração, sempre preenchido pelo trigger (o valor enviado é ignorado). Nulo nas linhas anteriores à 0009. **Desde a 0014 é `session_user`** (o papel que conectou), e não `current_user`: dentro de uma função SECURITY DEFINER, `current_user` seria o dono da função.
 - TRUNCATE em parametrização é bloqueado (SC010), porque não passaria pela auditoria por linha.
 
 ### Carga inicial (0012)
@@ -653,6 +746,22 @@ Em relação ao `safety_car_modelo_dados_v1.sql`:
 - `sinal_risco.tipo`: lista inicial **proposta**, para revisão (`multiplas_contas_dispositivo`, `dado_em_bloqueio`, `cartao_recusado`, `localizacao_inconsistente`, `cadastro_acelerado`, `outro`).
 - O app **não apaga** `usuario`, `consentimento`, `verificacao_identidade` nem `sinal_risco` (ver privilégios).
 - **CPF do tomador no cadastro** (decidido, 0008): `cpf_cifrado` e `cpf_hash` `NOT NULL`. A linha de `tomador` só existe com CPF; o `usuario` pode existir antes (cadastro em etapas).
+- **Autorização da Central: alternativa B** (decidido, 0014). As ações sensíveis são funções SECURITY DEFINER executáveis só pelo papel `safetycar_central`; o ator vem por parâmetro e é verificado no banco (operador ativo, usuário ativo de perfil central, permissão efetiva, nunca a si mesmo).
+  - **Risco de falsificação do ator, por alternativa:**
+    - A: funções liberadas ao `safetycar_app`. Qualquer bug, injeção ou servidor comprometido da API pública poderia declarar um aprovador. Descartada.
+    - **B (adotada)**: só quem tem a credencial do `safetycar_central` consegue declarar outro ator. Um comprometimento do app público não concede nem aprova nada.
+    - C: um login de banco por pessoa. É a mais forte, mas duplicaria a identidade, que é do Keycloak.
+    - D: o banco verificar o JWT. Exigiria chave e criptografia no banco. Descartada.
+  - **O backend da Central deve usar um pool de conexão separado** do app, com a credencial `safetycar_central`, e **tirar o ator do JWT do Keycloak, nunca do corpo da requisição**. É isso que fecha o risco residual da alternativa B.
+  - A senha fica só no `.env` (`SAFETYCAR_CENTRAL_PASSWORD`), nunca no Git.
+- **`auditoria.papel_bd` = `session_user`** (decidido, 0014), para registrar o papel real mesmo dentro de SECURITY DEFINER.
+- **O app não executa `operador_tem_permissao`** (decidido, 0014). O app já lê `usuario`, inclusive o perfil `central`, e poderia perguntar um a um quem é aprovador. A interface da Central pergunta pelo backend da Central. O app só lê o catálogo `permissao_central`.
+- **Concessão inicial: regra estrita** (decidido, 0014). É recusada enquanto existir qualquer concessão de `conceder_permissao` sem revogação, mesmo que o detentor esteja inativo ou suspenso.
+  - É feita à mão, pelo migrator, nunca por carga automática. O uuid da pessoa não vai para o Git, porque é diferente em cada ambiente.
+  - **Recuperação** (detentor indisponível ou comprometido), à mão pelo migrator:
+    1. `SELECT revogar_permissao_manual('<detentor>', 'conceder_permissao', '<motivo>');`
+    2. `SELECT conceder_permissao_inicial('<novo detentor>', '<motivo>');`
+- **Ator restaurado ao fim das funções** (decidido, 0014). As funções de ação gravam o ator com `set_config(…, true)` e restauram o valor anterior no fim. Uma chamada aninhada não apaga o ator da chamada de fora (há teste).
 - **Nível 0 "cadastro incompleto"** (decidido, 0013). O nível 1 significa e-mail e celular verificados, e nascer nele poderia liberar serviços para quem não verificou nada. Por isso:
   - o cadastro nasce no 0;
   - o 0 não tem requisitos, não pode ser nível mínimo de serviço e não tem garantia (CHECK `>= 1`);
@@ -692,3 +801,5 @@ Registradas aqui; nenhuma foi decidida nesta fase.
 13. Não há vínculo formal entre tipo de parceiro e serviço (quais serviços cada tipo presta); hoje só a carga de `regra_taxa` reflete isso.
 14. Ligar `meio_pagamento.psp` (texto livre, 0006) a `provedor_pagamento` quando o processador for escolhido.
 15. Base do percentual da garantia: como se calcula a estimativa do serviço (fase do chamado).
+16. **Cerca de 30 funções antigas (0002 a 0013) mantêm o EXECUTE padrão para PUBLIC** (padrão do PostgreSQL). Hoje não é grave: todas rodam com os privilégios de quem chama, e PUBLIC não conecta no banco. Avaliar um `REVOKE EXECUTE … FROM PUBLIC` geral com GRANTs explícitos, conferindo que os triggers continuam funcionando. As funções da 0014 já nascem sem PUBLIC, exceto as de trigger, que o PostgreSQL só aceita chamar como trigger.
+17. **Teste de concorrência com duas sessões** (por exemplo, duas concessões iniciais simultâneas terminando em SC018, e não em 40P01) não está no `testar.sh`, que roda uma sessão por arquivo. Fazer à parte, num banco descartável.

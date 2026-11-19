@@ -19,6 +19,13 @@ Plataforma de assistência rodoviária conectada (guincho, mecânica e serviços
   - `0012`: o app **só lê** a parametrização; **alteração só por migração**, sempre auditada (`auditoria.papel_bd`, `safetycar.ator_usuario_id`). Carga inicial toda `a_definir`; os requisitos por nível são **proposta**.
   - "A definir" nunca vale como zero nem como nível: as consultas (`nivel_minimo_servico`, `regra_taxa_vigente`, `politica_garantia_vigente`) recusam com SC013.
   - `0013`: nível 0 "cadastro incompleto". Tomador e parceiro nascem no 0 e só sobem por linha no histórico. O 0 não cumpre o mínimo de nenhum serviço, não tem requisitos nem garantia (CHECK `>= 1`; garantia no 0 dá 22023). Origem `migracao` no histórico. O comentário da 0003 sobre os níveis está superado.
+- **Operadores e permissões da Central** (migração `0014`, testes `16` e `17`):
+  - Catálogo `permissao_central` (`conceder_permissao`, `aprovar_reajuste_taxa`; extensível por migração), `operador_central` e histórico somente de inserção (`permissao_concessao`, `permissao_revogacao`). A permissão vigente é derivada do histórico; `operador_tem_permissao()` responde "tem agora?".
+  - Autorização pela alternativa B: as ações sensíveis são funções SECURITY DEFINER executáveis **só** pelo papel `safetycar_central`, nunca pelo `safetycar_app`. O ator é verificado no banco. **O backend da Central usa um pool de conexão separado e tira o ator do JWT do Keycloak, nunca do corpo da requisição.**
+  - Ninguém concede permissão a si mesmo. A primeira concessão de `conceder_permissao` é feita à mão pelo migrator (`conceder_permissao_inicial`), só quando não há concessão vigente dela. Recuperação: `revogar_permissao_manual` e depois `conceder_permissao_inicial`.
+  - O app não executa `operador_tem_permissao`, para não sondar quem é aprovador. `auditoria.papel_bd` passou a ser `session_user`.
+  - Senha do papel em `SAFETYCAR_CENTRAL_PASSWORD`, só no `.env`. Em volume antigo, o papel é criado com `bash db/scripts/criar_papeis.sh`.
+  - O primeiro administrador ainda não foi definido no `safetycar`.
 - **Keycloak de desenvolvimento** no `docker-compose.yml` (26.8.2, `start-dev`, só em 127.0.0.1), com banco próprio (`keycloak-db`). O realm `safetycar-dev` é versionado em `keycloak/realms/safetycar-dev.json`, **sem usuários, senhas nem segredos**. O client `safetycar-web` é público, com PKCE S256 e `aud=safetycar-api`. Detalhes em `docs/KEYCLOAK.md`.
 - **Esqueleto do backend** em `apps/api` (Node 24 + TypeScript estrito; Fastify, `pg`, Zod, `jose` e pino-pretty em dev; testes com `node:test`). Ainda sem regra de negócio: `GET /saude` (SELECT 1) e `GET /eu` (valida o JWT do Keycloak e devolve o `keycloak_sub`).
   - Conecta só como `safetycar_app`: a configuração recusa `safetycar_migrator` e `postgres`, e a subida recusa papel superusuário ou com CREATE no schema `public`.
@@ -34,6 +41,7 @@ Plataforma de assistência rodoviária conectada (guincho, mecânica e serviços
 ## Comandos
 ```bash
 docker compose up -d                                # banco, Keycloak e banco do Keycloak
+bash db/scripts/criar_papeis.sh                     # só em volume antigo: cria safetycar_central (idempotente)
 bash db/scripts/migrar.sh                           # migrações no banco safetycar
 bash db/scripts/testar.sh                           # testes do banco (recria safetycar_teste)
 cd apps/api && npm ci                               # dependências da API
@@ -72,6 +80,7 @@ npm run dev | test | lint | build                   # em apps/web (build inclui 
 - Garantia por pré-autorização no cartão e Pix pré-pago.
 - CPF obrigatório **no cadastro** do tomador (decidido, migração 0008). Para parceiro PJ e MEI, o CPF do responsável é exigido na aprovação do credenciamento.
 - Valores de parametrização (taxas, garantia, níveis mínimos) mudam só por migração nova, nunca pelo app.
+- Aprovações sensíveis são feitas por quem tem a permissão correspondente vigente (por exemplo, `aprovar_reajuste_taxa`), e não por um "administrador" fixo. Quem solicita não aprova o próprio pedido; a exceção (`permite_autoaprovacao`) está desligada e só muda por migração.
 - Verificação do celular obrigatória.
 - Migrar do protótipo Python/SQLite.
 - Módulo de seguros na Fase 1 (escopo a definir).

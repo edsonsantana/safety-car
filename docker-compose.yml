@@ -10,6 +10,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
       SAFETYCAR_MIGRATOR_PASSWORD: ${SAFETYCAR_MIGRATOR_PASSWORD:?defina SAFETYCAR_MIGRATOR_PASSWORD no .env}
       SAFETYCAR_APP_PASSWORD: ${SAFETYCAR_APP_PASSWORD:?defina SAFETYCAR_APP_PASSWORD no .env}
+      # Opcional aqui para não travar volumes antigos; o db/init/01_papeis.sh a exige em volume novo.
+      SAFETYCAR_CENTRAL_PASSWORD: ${SAFETYCAR_CENTRAL_PASSWORD:-}
       TZ: UTC
       PGTZ: UTC
     ports:
