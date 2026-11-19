@@ -11,6 +11,13 @@ Plataforma de assistência rodoviária conectada (guincho, mecânica e serviços
   - Migração aplicada não se edita: o `migrar.sh` confere o sha256. Toda migração nova declara os GRANTs do `safetycar_app` (não há default privileges).
   - Já decidido nesta fase: `tipo_parceiro` com `exige_viatura` e `permite_viatura` (guincho exige; mecânica e chaveiro permitem; seguros não); registro Susep exigido na aprovação; CNPJ numérico e alfanumérico com DV; área de atuação por centro + raio.
   - Fora do Git até revisão: zips, docx, pdf, html, png, `files/` e `docs/README.md` (README do protótipo v5, com senhas de demonstração).
+- **Parametrização do modelo de negócio** (migrações `0008` a `0012`, testes `09` a `13`):
+  - `0008`: CPF do tomador obrigatório no cadastro (NOT NULL); CPF do responsável de PJ/MEI exigido na aprovação (sem UNIQUE).
+  - `0009`: níveis de verificação (catálogo, requisitos por nível e perfil, nível mínimo por serviço e perfil); o nível atual de tomador e parceiro só muda pelo histórico (`nivel_verificacao_historico`, somente inserção).
+  - `0010`: `regra_taxa` por tipo de parceiro, serviço e UF (nula = nacional), em inteiros (centavos, centavos/km, pontos-base); vigência sem sobreposição (`btree_gist`) e imutável (só o fim é definido; mudança = nova linha); `base_distancia` padrão `linha_reta`.
+  - `0011`: `politica_garantia` (pré-autorização ou Pix; fixo ou percentual; por serviço e nível) e `provedor_pagamento` (capacidades e ambiente, **sem credenciais**).
+  - `0012`: o app **só lê** a parametrização; **alteração só por migração**, sempre auditada (`auditoria.papel_bd`, `safetycar.ator_usuario_id`). Carga inicial toda `a_definir`; os requisitos por nível são **proposta**.
+  - "A definir" nunca vale como zero nem como nível: as consultas (`nivel_minimo_servico`, `regra_taxa_vigente`, `politica_garantia_vigente`) recusam com SC013.
 - **Keycloak de desenvolvimento** no `docker-compose.yml` (26.8.2, `start-dev`, só em 127.0.0.1), com banco próprio (`keycloak-db`). O realm `safetycar-dev` é versionado em `keycloak/realms/safetycar-dev.json`, **sem usuários, senhas nem segredos**. O client `safetycar-web` é público, com PKCE S256 e `aud=safetycar-api`. Detalhes em `docs/KEYCLOAK.md`.
 - **Esqueleto do backend** em `apps/api` (Node 24 + TypeScript estrito; Fastify, `pg`, Zod, `jose` e pino-pretty em dev; testes com `node:test`). Ainda sem regra de negócio: `GET /saude` (SELECT 1) e `GET /eu` (valida o JWT do Keycloak e devolve o `keycloak_sub`).
   - Conecta só como `safetycar_app`: a configuração recusa `safetycar_migrator` e `postgres`, e a subida recusa papel superusuário ou com CREATE no schema `public`.
@@ -62,7 +69,8 @@ npm run dev | test | lint | build                   # em apps/web (build inclui 
 ## Decisões já tomadas
 - 2FA incentivado para o tomador; obrigatório para parceiro e Central (proposta, a confirmar).
 - Garantia por pré-autorização no cartão e Pix pré-pago.
-- CPF obrigatório (momento a confirmar: no cadastro ou antes do primeiro chamado).
+- CPF obrigatório **no cadastro** do tomador (decidido, migração 0008). Para parceiro PJ e MEI, o CPF do responsável é exigido na aprovação do credenciamento.
+- Valores de parametrização (taxas, garantia, níveis mínimos) mudam só por migração nova, nunca pelo app.
 - Verificação do celular obrigatória.
 - Migrar do protótipo Python/SQLite.
 - Módulo de seguros na Fase 1 (escopo a definir).
@@ -70,7 +78,7 @@ npm run dev | test | lint | build                   # em apps/web (build inclui 
 - Protótipos 1 a 3 (cadastro e 2FA, verificação de identidade e documentos do parceiro, painel da Central) feitos no canvas; as perguntas de validação estão na seção 15 do documento de alinhamento.
 
 ## Decisões pendentes (NÃO assumir; perguntar)
-Confirmação do Keycloak com o Adailton, confirmação da regra de 2FA, momento de exigência do CPF, canal de verificação do celular (SMS ou WhatsApp), escopo do módulo de seguros, processador de pagamento, regras de cancelamento e taxas, serviços por nível de verificação, motor de rotas e tempo de chegada (serviço externo ou pgRouting), retenção de histórico de GPS e base legal.
+Confirmação do Keycloak com o Adailton, confirmação da regra de 2FA, canal de verificação do celular (SMS ou WhatsApp), escopo do módulo de seguros, processador de pagamento, regras de cancelamento e **valores** de taxas e garantia (a estrutura existe, tudo `a_definir`), requisitos de cada nível (carregados como proposta) e nível mínimo por serviço, distância rodoviária na cobrança (licença do SNV e termos do Google), motor de rotas e tempo de chegada (serviço externo ou pgRouting), retenção de histórico de GPS e base legal.
 
 ## Como trabalhar neste repositório
 - Para qualquer mudança que toque mais de um arquivo, propor um plano antes de editar.
