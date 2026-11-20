@@ -13,6 +13,13 @@ docs/*.png
 # README do protótipo v5: lista contas de demonstração com senha
 docs/README.md
 
+# Dados do SNV/DNIT (ver docs/SNV/README.md): zips acima de ~50 MB;
+# planilha e manual fora até a licença ser registrada. O README é versionado.
+docs/SNV/*.zip
+docs/SNV/*.xls
+docs/SNV/*.pdf
+!docs/SNV/README.md
+
 # Sistema operacional / editores
 Thumbs.db
 .DS_Store
