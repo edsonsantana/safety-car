@@ -101,7 +101,7 @@ npm run dev | test | lint | build                   # em apps/web (build inclui 
 - Protótipos 1 a 3 (cadastro e 2FA, verificação de identidade e documentos do parceiro, painel da Central) feitos no canvas; as perguntas de validação estão na seção 15 do documento de alinhamento.
 
 ## Decisões pendentes (NÃO assumir; perguntar)
-Confirmação do Keycloak com o Adailton, confirmação da regra de 2FA, canal de verificação do celular (SMS ou WhatsApp), escopo do módulo de seguros, processador de pagamento, regras de cancelamento e **valores** de taxas e garantia (a estrutura existe, tudo `a_definir`), requisitos de cada nível (carregados como proposta) e nível mínimo por serviço, distância rodoviária na cobrança (licença do SNV e termos do Google), motor de rotas e tempo de chegada (serviço externo ou pgRouting), retenção de histórico de GPS e base legal.
+Confirmação do Keycloak com o Adailton, confirmação da regra de 2FA, canal de verificação do celular (SMS ou WhatsApp), escopo do módulo de seguros, processador de pagamento, regras de cancelamento e **valores** de taxas e garantia (a estrutura existe, tudo `a_definir`), requisitos de cada nível (carregados como proposta) e nível mínimo por serviço, distância rodoviária na cobrança (o SNV é publicado sob a licença Creative Commons Atribuição-SemDerivações 3.0: uso com citação da fonte, sem redistribuir versão modificada do dado; depende ainda dos termos do provedor externo, se houver), motor de rotas e tempo de chegada (serviço externo ou pgRouting), retenção de histórico de GPS e base legal.
 
 ## Como trabalhar neste repositório
 - Para qualquer mudança que toque mais de um arquivo, propor um plano antes de editar.

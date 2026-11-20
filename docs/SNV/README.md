@@ -4,7 +4,7 @@
 
 Esta pasta guarda os dados públicos do SNV: planilha, shapefile dos trechos, shapefile das rotas e manual. Aqui eles ficam **registrados de forma verificável**: o que é cada arquivo, o hash e o que tem dentro.
 
-Nenhuma decisão de arquitetura foi tomada aqui. O uso de distância rodoviária na cobrança continua pendente, porque depende da licença do SNV e dos termos do provedor (ver `CLAUDE.md` e `docs/BANCO_DE_DADOS.md`, pendência 12).
+Nenhuma decisão de arquitetura foi tomada aqui. O uso de distância rodoviária na cobrança continua pendente. O SNV é publicado sob a licença Creative Commons Atribuição-SemDerivações 3.0 (uso com citação da fonte, sem redistribuir versão modificada do dado); depende ainda dos termos do provedor externo, se houver (ver `CLAUDE.md` e `docs/BANCO_DE_DADOS.md`, pendência 12).
 
 ## Origem
 
@@ -13,7 +13,7 @@ Nenhuma decisão de arquitetura foi tomada aqui. O uso de distância rodoviária
 | Página de origem (URL) | https://www.gov.br/dnit/pt-br/assuntos/atlas-e-mapas/pnv-e-snv |
 | Data do download | 21/10/2026 |
 | Versão ou data de referência do dado | SNV_202610A |
-| Licença ou termos de uso (texto como aparece na página) | citar a fonte - licença livre |
+| Licença ou termos de uso (texto como aparece na página) | Todo o conteúdo deste site está publicado sob a licença Creative Commons Atribuição-SemDerivações 3.0 Não Adaptada. |
 
 Campos preenchidos pelo Edson em 2026-11-20. O texto da licença está reproduzido exatamente como ele informou.
 

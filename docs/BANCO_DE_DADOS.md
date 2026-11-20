@@ -892,7 +892,7 @@ Registradas aqui; nenhuma foi decidida nesta fase.
 9. Onde fica a chave de HMAC/cifragem e como é feita a rotação (depende da stack).
 10. ~~Nível inicial: tomador e parceiro nascem no nível 1 (padrão herdado da 0003) antes de cumprir os requisitos do nível 1.~~ **Resolvida na 0013**: nível 0 "cadastro incompleto"; todo cadastro nasce no 0.
 11. O banco não confere se os requisitos do nível foram cumpridos (o cálculo é da aplicação). Avaliar uma checagem no banco para `origem = 'automatica'`.
-12. Distância rodoviária para cobrança (`rodoviaria_snv`, `rodoviaria_osm`, `provedor_externo`): fase seguinte, pendente de confirmar a licença do SNV e os termos do Google para guardar a distância usada em cobrança. Até lá, só `linha_reta` tem cálculo no banco.
+12. Distância rodoviária para cobrança (`rodoviaria_snv`, `rodoviaria_osm`, `provedor_externo`): fase seguinte. O SNV é publicado sob a licença Creative Commons Atribuição-SemDerivações 3.0 (uso com citação da fonte, sem redistribuir versão modificada do dado). Para guardar a distância usada em cobrança, depende ainda dos termos do provedor externo, se houver. Até lá, só `linha_reta` tem cálculo no banco.
 13. Não há vínculo formal entre tipo de parceiro e serviço (quais serviços cada tipo presta); hoje só a carga de `regra_taxa` reflete isso.
 14. Ligar `meio_pagamento.psp` (texto livre, 0006) a `provedor_pagamento` quando o processador for escolhido.
 15. Base do percentual da garantia: como se calcula a estimativa do serviço (fase do chamado).

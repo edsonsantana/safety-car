@@ -225,7 +225,7 @@ O nível de verificação mede o quanto um cadastro foi comprovado. Ele vai de *
 
 **A definir**
 - **Todos os valores.** A carga inicial está inteira "a definir".
-- A base da distância cobrada por km: linha reta, rodoviária por base pública (SNV ou OSM) ou provedor externo. Depende da licença do SNV e dos termos do provedor.
+- A base da distância cobrada por km: linha reta, rodoviária por base pública (SNV ou OSM) ou provedor externo. O SNV é publicado sob a licença Creative Commons Atribuição-SemDerivações 3.0 (uso com citação da fonte, sem redistribuir versão modificada do dado); depende ainda dos termos do provedor externo, se houver.
 - Se o cancelamento será cobrado em valor fixo ou em percentual.
 - O cálculo do preço do chamado (fase do chamado).
 
@@ -281,7 +281,7 @@ Serve para reajustar muitas regras de uma vez, por exemplo em período de infla�
 - Regras de cancelamento.
 - **Valores** de taxas e garantia.
 - Requisitos de cada nível (hoje proposta) e nível mínimo por serviço.
-- Uso de distância rodoviária na cobrança (depende da licença do SNV e dos termos do Google).
+- Uso de distância rodoviária na cobrança (o SNV é publicado sob a licença Creative Commons Atribuição-SemDerivações 3.0, que permite o uso com citação da fonte, sem redistribuir versão modificada do dado; depende ainda dos termos do provedor externo, se houver).
 - Motor de rotas e tempo de chegada (serviço externo ou próprio).
 - Retenção do histórico de GPS e base legal.
 - O que fazer com um parceiro aprovado cujo documento vence.
