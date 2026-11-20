@@ -10,10 +10,12 @@ Nenhuma decisão de arquitetura foi tomada aqui. O uso de distância rodoviária
 
 | Campo | Valor |
 |---|---|
-| Página de origem (URL) | **PREENCHER PELO EDSON** |
-| Data do download | **PREENCHER PELO EDSON** |
-| Versão ou data de referência do dado | **PREENCHER PELO EDSON** |
-| Licença ou termos de uso (texto como aparece na página) | **PREENCHER PELO EDSON** |
+| Página de origem (URL) | https://www.gov.br/dnit/pt-br/assuntos/atlas-e-mapas/pnv-e-snv |
+| Data do download | 21/10/2026 |
+| Versão ou data de referência do dado | SNV_202610A |
+| Licença ou termos de uso (texto como aparece na página) | citar a fonte - licença livre |
+
+Campos preenchidos pelo Edson em 2026-11-20. O texto da licença está reproduzido exatamente como ele informou.
 
 ## Arquivos
 
@@ -21,8 +23,8 @@ Nenhuma decisão de arquitetura foi tomada aqui. O uso de distância rodoviária
 |---|---|---|---|---|
 | `202610A.zip` | zip com o shapefile dos trechos | 70.435.325 (70,4 MB) | não: acima de ~50 MB | `d151bc8b9b21451292c414ff02e3f4cd5e178cb49765029e5abc1aa34ca40f46` |
 | `rota_202610A.zip` | zip com o shapefile das rotas | 90.664.789 (90,7 MB) | não: acima de ~50 MB | `28c87a64189ba7a0d8e2960c4f7d4fea1f4997a780c7f93ccc08c371b97fa560` |
-| `SNV_202610A.xls` | planilha Excel 97-2003 (BIFF8) | 2.604.544 (2,6 MB) | não: até a licença ser registrada | `0af6d9066f2436f1ed8d0cd869ebf196544ccdb66aeb159865bfc56e678d41c4` |
-| `GUIA SNV_2025.pdf` | PDF 1.7, 20 páginas | 2.828.786 (2,8 MB) | não: até a licença ser registrada | `92dabeab1c398b2dbe35a8a9a15ee20922b03949cfae6c1e517059f0efa135c9` |
+| `SNV_202610A.xls` | planilha Excel 97-2003 (BIFF8) | 2.604.544 (2,6 MB) | não: decisão de manter fora do Git | `0af6d9066f2436f1ed8d0cd869ebf196544ccdb66aeb159865bfc56e678d41c4` |
+| `GUIA SNV_2025.pdf` | PDF 1.7, 20 páginas | 2.828.786 (2,8 MB) | não: decisão de manter fora do Git | `92dabeab1c398b2dbe35a8a9a15ee20922b03949cfae6c1e517059f0efa135c9` |
 
 Só este README é versionado. As regras estão no `.gitignore` da raiz.
 
@@ -44,7 +46,28 @@ Só este README é versionado. As regras estão no `.gitignore` da raiz.
 
 ## Inventário
 
-O inventário foi feito em 2026-11-20, **só com leitura**. Os shapefiles foram lidos de dentro dos zips, sem extrair nem converter. Como `ogrinfo` e GDAL não estão instalados, a leitura foi feita com scripts em Python que usam só a biblioteca padrão.
+O inventário foi feito em 2026-11-20, **só com leitura**. Os shapefiles foram lidos de dentro dos zips, sem extrair nem converter. Como `ogrinfo` e GDAL não estão instalados, a leitura foi feita com os scripts de [`inventario/`](inventario/), em Python, que usam só a biblioteca padrão.
+
+### Como refazer o inventário
+
+Com os quatro arquivos nesta pasta, no Git Bash:
+
+```bash
+bash docs/SNV/inventario/inventario.sh            # usa "python" do PATH
+PYTHON=/c/Python314/python bash docs/SNV/inventario/inventario.sh   # outro Python
+```
+
+O script começa conferindo os hashes e para se algum não bater. Depois mostra os tamanhos, o conteúdo dos zips, os dois shapefiles, a planilha, os metadados e a capa do manual, e as conferências cruzadas das observações.
+
+| Script | O que faz |
+|---|---|
+| `inventario.sh` | roda tudo, na ordem acima |
+| `shp_info.py` | shapefile dentro do zip: arquivos auxiliares, `.prj`, `.cpg`, geometria, envelope, contagens no `.shx` e no `.dbf`, campos, exemplos e valores distintos |
+| `xls_info.py` | `.xls` (OLE2 + BIFF8): abas, dimensões e primeiras e última linhas |
+| `pdf_texto.py` | título, datas e páginas do PDF e texto aproximado das páginas pedidas |
+| `conferencias.py` | códigos da planilha × shapefile, extensão × km, soma das extensões por jurisdição e superfície, trechos com estadual coincidente |
+
+Nenhum script extrai, converte ou altera os originais. Os metadados de autor (da planilha e do PDF) não são impressos.
 
 ### Planilha `SNV_202610A.xls`
 

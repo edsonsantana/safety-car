@@ -14,11 +14,14 @@ docs/*.png
 docs/README.md
 
 # Dados do SNV/DNIT (ver docs/SNV/README.md): zips acima de ~50 MB;
-# planilha e manual fora até a licença ser registrada. O README é versionado.
+# planilha e manual fora por decisão (licença registrada). O README é versionado.
 docs/SNV/*.zip
 docs/SNV/*.xls
 docs/SNV/*.pdf
 !docs/SNV/README.md
+
+# Python
+__pycache__/
 
 # Sistema operacional / editores
 Thumbs.db
