@@ -14,6 +14,19 @@ psql_como() {
     psql -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=terse -U "$papel" -d "$banco" "$@"
 }
 
+# le_env <NOME>: imprime o valor de NOME=valor do .env da raiz, sem executar o arquivo
+# ("source"), tirando aspas simples ou duplas das pontas. Vazio se a variável não existir.
+le_env() {
+  local nome="$1" linha
+  [[ -f .env ]] || { echo "ERRO: .env não encontrado na raiz do projeto." >&2; exit 1; }
+  linha="$(grep -E "^${nome}=" .env | tail -n 1 || true)"
+  linha="${linha#*=}"
+  linha="${linha%$'\r'}"
+  linha="${linha#\"}"; linha="${linha%\"}"
+  linha="${linha#\'}"; linha="${linha%\'}"
+  printf '%s' "$linha"
+}
+
 exige_banco_saudavel() {
   local estado
   estado="$(docker compose ps --format '{{.Health}}' db 2>/dev/null || true)"

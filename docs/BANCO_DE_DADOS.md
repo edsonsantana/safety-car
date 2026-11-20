@@ -29,13 +29,19 @@ docker compose up -d          # sobe o banco; espere "healthy" em: docker compos
 bash db/scripts/criar_papeis.sh  # só em volume antigo: cria safetycar_central (0014)
 bash db/scripts/migrar.sh     # aplica as migrações pendentes no banco "safetycar"
 bash db/scripts/testar.sh     # recria "safetycar_teste" do zero, migra duas vezes e roda db/tests
+bash db/scripts/testar_concorrencia.sh  # à parte: duas sessões simultâneas em "safetycar_conc" (0014 e 0015)
 ```
 
 - `migrar.sh [banco]` aplica cada migração numa transação única e grava `versao`, `arquivo` e `sha256` em `schema_migracao`. Uma migração já aplicada é pulada. **Se o arquivo de uma migração aplicada mudar, o script para:** migração aplicada não se edita; cria-se outra.
 - `testar.sh` não toca no banco de desenvolvimento. Cada arquivo de teste roda em `BEGIN … ROLLBACK`. Falha = `FALHOU: …`, e o script sai com código ≠ 0.
   - Sufixo do arquivo de teste: `_app.sql` roda como `safetycar_app`; `_central.sql` prepara dados como `postgres` até a linha `-- @como_central` e, dali em diante, roda como `safetycar_central` (`SET SESSION AUTHORIZATION`, então `session_user` é o papel da Central); os demais rodam como `safetycar_migrator`.
   - O `testar.sh` exige que o papel `safetycar_central` exista.
-  - **Não há teste de concorrência com duas sessões**: os testes rodam numa sessão só. A serialização das concessões (locks do trigger, inclusive "duas concessões iniciais simultâneas terminam em SC018, nunca em 40P01") está no código, mas não é exercitada pelo `testar.sh`.
+  - O `testar.sh` roda uma sessão por arquivo e **não cobre concorrência**. Isso fica no `testar_concorrencia.sh`, abaixo.
+- `testar_concorrencia.sh`: fora da suíte padrão. Cria o banco descartável `safetycar_conc` e aplica as migrações do zero. Roda os cenários com **duas sessões `psql` simultâneas** e apaga o banco no fim, mesmo em caso de falha ou Ctrl+C. O `safetycar` não é tocado.
+  - Em cada cenário, a sessão A faz a ação e segura a transação aberta (`pg_sleep`). O script dispara B e **confere no `pg_stat_activity` que B ficou bloqueada esperando lock**. Só então A faz o commit. Se B não esperar, o cenário falha, porque não houve concorrência.
+  - A Central entra **por TCP com senha**: `-h db` dentro do contêiner, onde o `pg_hba.conf` exige `scram-sha-256`. A senha do `.env` vai por variável de ambiente, nunca pela linha de comando, e não é impressa. Uma pré-condição confere que senha errada é recusada.
+  - Timeouts: `lock_timeout` de 15 s e `statement_timeout` de 30 s por sessão, 60 s por processo e 10 s por espera. O `deadlock_timeout` fica no padrão (1 s), para que um 40P01 apareça de fato.
+  - Cada verificação imprime `OK` ou `FALHOU` com o SQLSTATE recebido. O script sai com código 1 se alguma falhar. Os cenários estão na [pendência 17](#pendências-não-decididas).
 - `criar_papeis.sh`: cria, num volume **já existente**, os papéis que vieram depois do volume (hoje o `safetycar_central`). É idempotente: papel existente mantém a senha e só reafirma os atributos. Lê `SAFETYCAR_CENTRAL_PASSWORD` do `.env` sem executá-lo, nunca imprime a senha nem a passa na linha de comando (vai ao `psql` do contêiner por variável de ambiente e `\getenv`), e recusa o valor de exemplo (`trocar-*`) e senha com menos de 16 caracteres. Em volume novo, quem cria o papel é o `db/init/01_papeis.sh`, que exige a variável.
 - Conexão a partir do computador: `127.0.0.1:${DB_PORTA}`, banco `safetycar`, usuário `safetycar_app` (ou `safetycar_migrator`) e a senha do `.env`. A porta só é publicada em 127.0.0.1.
 - Recomeçar do zero apaga todos os dados locais: `docker compose down -v` e depois `docker compose up -d`. O script `db/init/01_papeis.sh` só roda quando o volume é novo.
@@ -891,6 +897,12 @@ Registradas aqui; nenhuma foi decidida nesta fase.
 14. Ligar `meio_pagamento.psp` (texto livre, 0006) a `provedor_pagamento` quando o processador for escolhido.
 15. Base do percentual da garantia: como se calcula a estimativa do serviço (fase do chamado).
 16. **Cerca de 30 funções antigas (0002 a 0013) mantêm o EXECUTE padrão para PUBLIC** (padrão do PostgreSQL). Hoje não é grave: todas rodam com os privilégios de quem chama, e PUBLIC não conecta no banco. Avaliar um `REVOKE EXECUTE … FROM PUBLIC` geral com GRANTs explícitos, conferindo que os triggers continuam funcionando. As funções da 0014 já nascem sem PUBLIC, exceto as de trigger, que o PostgreSQL só aceita chamar como trigger.
-17. **Teste de concorrência com duas sessões** não está no `testar.sh`, que roda uma sessão por arquivo. Fazer à parte, num banco descartável, para:
-    - duas concessões iniciais simultâneas terminando em SC018, e não em 40P01 (0014);
-    - duas aprovações de reajuste simultâneas com escopos sobrepostos: a segunda espera o `pg_advisory_xact_lock(150001)`, recalcula sobre as regras já reajustadas e não cria sobreposição (0015). Hoje o teste só confere que o lock foi obtido.
+17. ~~Teste de concorrência com duas sessões.~~ **Resolvida pelo `db/scripts/testar_concorrencia.sh`** (2026-11-20), fora da suíte padrão. Todos os cenários passaram **sem defeito nas migrações** e nenhuma migração nova foi necessária. Em todos, B ficou de fato bloqueada esperando lock:
+    1. Duas concessões iniciais simultâneas de `conceder_permissao`, com usuários diferentes e com o mesmo usuário (depois da recuperação manual): uma conclui e a outra termina em SC018, nunca em 40P01. Sobra uma concessão vigente (0014).
+    2. Duas aprovações simultâneas do mesmo lote: a segunda espera o advisory lock e termina em SC020. Há uma decisão só e uma versão nova só.
+    3. Duas aprovações simultâneas de lotes diferentes com escopo sobreposto: são serializadas, e a segunda **recalcula sobre o valor já reajustado** (10005 → 11006 → 11556, e não 10505). Não houve reajuste parcial e as vigências ficaram contíguas.
+    4. Duas aprovações simultâneas de lotes com escopos disjuntos: as duas concluem. A segunda também espera, porque o advisory lock 150001 é global e serializa toda aprovação de reajuste, por desenho.
+    5. Duas concessões simultâneas da mesma permissão ao mesmo operador, por dois detentores de `conceder_permissao`: a segunda espera o `FOR UPDATE` no operador e termina em SC018.
+    6. Uma regra "a definir" entra no escopo, por uma sessão do migrator segurando o advisory lock, enquanto a aprovação espera: a aprovação termina em SC013, nenhuma regra é alterada e o lote continua `solicitado`.
+
+    No fim, o script confere que não há vigência sobreposta em `regra_taxa` nem em `politica_garantia`.

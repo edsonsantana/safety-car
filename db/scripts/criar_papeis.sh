@@ -13,18 +13,6 @@ set -euo pipefail
 source "$(dirname "$0")/_comum.sh"
 exige_banco_saudavel
 
-# Lê VAR=valor do .env (sem "source"), tirando aspas simples ou duplas das pontas.
-le_env() {
-  local nome="$1" linha
-  [[ -f .env ]] || { echo "ERRO: .env não encontrado na raiz do projeto." >&2; exit 1; }
-  linha="$(grep -E "^${nome}=" .env | tail -n 1 || true)"
-  linha="${linha#*=}"
-  linha="${linha%$'\r'}"
-  linha="${linha#\"}"; linha="${linha%\"}"
-  linha="${linha#\'}"; linha="${linha%\'}"
-  printf '%s' "$linha"
-}
-
 SC_CENTRAL_PW="$(le_env SAFETYCAR_CENTRAL_PASSWORD)"
 if [[ -z "$SC_CENTRAL_PW" ]]; then
   echo "ERRO: defina SAFETYCAR_CENTRAL_PASSWORD no .env (veja .env.example)." >&2

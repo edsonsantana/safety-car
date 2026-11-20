@@ -54,6 +54,7 @@ docker compose up -d                                # banco, Keycloak e banco do
 bash db/scripts/criar_papeis.sh                     # só em volume antigo: cria safetycar_central (idempotente)
 bash db/scripts/migrar.sh                           # migrações no banco safetycar
 bash db/scripts/testar.sh                           # testes do banco (recria safetycar_teste)
+bash db/scripts/testar_concorrencia.sh              # à parte: duas sessões simultâneas (0014 e 0015) em safetycar_conc, apagado no fim
 cd apps/api && npm ci                               # dependências da API
 npm run dev | test | test:integracao | lint | build  # em apps/api
 cd apps/web && npm ci                               # dependências do frontend
