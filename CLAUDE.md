@@ -3,6 +3,7 @@
 Plataforma de assistência rodoviária conectada (guincho, mecânica e serviços correlatos): o tomador solicita socorro, o parceiro aceita e compartilha a posição, e a Central acompanha. Projeto em parceria com o Adailton. Idioma do projeto: português do Brasil.
 
 ## Estado atual
+- Documentação: o produto em `docs/COMO_FUNCIONA.md` (para o sócio e interessados; descreve comportamento, sem tabelas); o guia de desenvolvimento, que era o README da raiz, em `docs/DESENVOLVIMENTO.md`. O `README.md` é só a apresentação e o mapa dos documentos.
 - Protótipo v8 (Python/SQLite, HTML/JS) e documentação servem de referência; o desenvolvimento na stack definitiva está começando.
 - Protótipo 1 (cadastro, verificação de e-mail, 2FA e login) aprovado.
 - Modelo de dados de referência: `docs/safety_car_modelo_dados_v1.sql`. A tarefa atual está descrita em `docs/PROMPT_BANCO_INICIAL.md`, que prevalece sobre o SQL v1 em caso de conflito.
