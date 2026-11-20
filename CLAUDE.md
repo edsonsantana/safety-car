@@ -27,7 +27,7 @@ Plataforma de assistência rodoviária conectada (guincho, mecânica e serviços
   - Ninguém concede permissão a si mesmo. A primeira concessão de `conceder_permissao` é feita à mão pelo migrator (`conceder_permissao_inicial`), só quando não há concessão vigente dela. Recuperação: `revogar_permissao_manual` e depois `conceder_permissao_inicial`.
   - O app não executa `operador_tem_permissao`, para não sondar quem é aprovador. `auditoria.papel_bd` passou a ser `session_user`.
   - Senha do papel em `SAFETYCAR_CENTRAL_PASSWORD`, só no `.env`. Em volume antigo, o papel é criado com `bash db/scripts/criar_papeis.sh`.
-  - O primeiro administrador ainda não foi definido no `safetycar`.
+  - Primeiro administrador: `bash db/scripts/primeiro_administrador.sh --email … --sub …` (`--simular` antes; grava só se for digitado o nome do banco). Roda **uma vez por ambiente** (trabalho, casa), cada um com o `keycloak_sub` do seu próprio Keycloak. Teste: `bash db/scripts/testar_primeiro_administrador.sh` (bancos descartáveis). Ainda não foi rodado no `safetycar`.
 - **Reajuste de taxas em lote** (migração `0015`, testes `18` e `19`):
   - `reajuste_taxa` (lote) e `reajuste_taxa_decisao`, ambos somente de inserção; `regra_taxa` ganhou `reajuste_id` e `regra_origem_id`. Funções da Central: simular, solicitar, aprovar, rejeitar e cancelar.
   - Qualquer operador ativo solicita e simula. Aprova quem tem `aprovar_reajuste_taxa`, nunca o próprio solicitante (autoaprovação desligada).
@@ -57,6 +57,8 @@ bash db/scripts/criar_papeis.sh                     # só em volume antigo: cria
 bash db/scripts/migrar.sh                           # migrações no banco safetycar
 bash db/scripts/testar.sh                           # testes do banco (recria safetycar_teste)
 bash db/scripts/testar_concorrencia.sh              # à parte: duas sessões simultâneas (0014 e 0015) em safetycar_conc, apagado no fim
+bash db/scripts/primeiro_administrador.sh --email … --sub … [--simular]  # 1º administrador da Central, uma vez por ambiente
+bash db/scripts/testar_primeiro_administrador.sh    # à parte: testa o script acima em bancos descartáveis, apagados no fim
 cd apps/api && npm ci                               # dependências da API
 npm run dev | test | test:integracao | lint | build  # em apps/api
 cd apps/web && npm ci                               # dependências do frontend

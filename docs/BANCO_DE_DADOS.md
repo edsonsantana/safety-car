@@ -30,6 +30,8 @@ bash db/scripts/criar_papeis.sh  # só em volume antigo: cria safetycar_central 
 bash db/scripts/migrar.sh     # aplica as migrações pendentes no banco "safetycar"
 bash db/scripts/testar.sh     # recria "safetycar_teste" do zero, migra duas vezes e roda db/tests
 bash db/scripts/testar_concorrencia.sh  # à parte: duas sessões simultâneas em "safetycar_conc" (0014 e 0015)
+bash db/scripts/primeiro_administrador.sh --email … --sub … [--simular]  # uma vez por ambiente (ver 0014)
+bash db/scripts/testar_primeiro_administrador.sh  # à parte: testa o script acima em bancos descartáveis
 ```
 
 - `migrar.sh [banco]` aplica cada migração numa transação única e grava `versao`, `arquivo` e `sha256` em `schema_migracao`. Uma migração já aplicada é pulada. **Se o arquivo de uma migração aplicada mudar, o script para:** migração aplicada não se edita; cria-se outra.
@@ -660,6 +662,46 @@ Não é excluído (só desativado, SC010). O usuário que é operador não troca
 **Funções manuais do migrator** (sem GRANT; chamadas à mão, via `psql`):
 - `conceder_permissao_inicial(usuario, motivo)`: cadastra o operador, se preciso, e concede `conceder_permissao` com `origem = 'inicial'`. Fica na auditoria com `papel_bd = safetycar_migrator` e sem ator.
 - `revogar_permissao_manual(operador, permissao, motivo)`: revogação de emergência, com `origem = 'manual'`.
+
+**Primeiro administrador** (`db/scripts/primeiro_administrador.sh`): define, num ambiente, quem detém a primeira `conceder_permissao`. O script é explícito, auditado e não grava dado pessoal no repositório (os valores vêm por argumento).
+
+```bash
+# valores fictícios; use o e-mail e o ID do usuário no Keycloak DESTE ambiente
+bash db/scripts/primeiro_administrador.sh --email admin@exemplo.invalid \
+     --sub 00000000-0000-4000-8000-0000000000a1 --simular          # mostra e desfaz
+bash db/scripts/primeiro_administrador.sh --email admin@exemplo.invalid \
+     --sub 00000000-0000-4000-8000-0000000000a1 [--banco safetycar] [--motivo "…"]
+```
+
+- **Argumentos:**
+  - `--sub` é o **ID** do usuário no Keycloak (painel → *Users* → usuário → *Details*), que vira `usuario.keycloak_sub`;
+  - `--banco` tem padrão `safetycar` e recusa `postgres`, `template0` e `template1`;
+  - `--motivo` tem um padrão fixo ("Primeiro administrador de permissões (db/scripts/primeiro_administrador.sh)").
+- **Validações, antes de gravar:**
+  - formato do e-mail e do uuid (normalizado para minúsculas);
+  - banco existente e com a 0014 aplicada;
+  - usuário com esse `sub` e outro perfil: aborta (o perfil não muda);
+  - usuário com esse `sub`, perfil central e e-mail ou status diferente de `ativo`: aborta;
+  - e-mail já usado por outro `sub`: aborta.
+  Nenhuma recusa altera nada.
+- **Confirmação:** o script mostra banco, e-mail, `sub` e motivo, e só grava se você **digitar o nome do banco alvo**. Qualquer outra resposta, inclusive vazia, encerra sem gravar (código de saída 2). `--simular` não pede confirmação: roda a transação e termina com `ROLLBACK`.
+- **Gravação**, numa única transação, como `safetycar_migrator` (pelo socket local do contêiner, sem ler senha nenhuma):
+  1. cria o `usuario` com perfil `central`, status `ativo` e `email_verificado_em` nulo, se ainda não existir. Quem verifica o e-mail é o Keycloak, e nenhuma regra do banco usa essa coluna;
+  2. grava em `auditoria` a criação (`acao = 'migrator_criar_usuario_central'`, com perfil, status e motivo, **sem o e-mail**);
+  3. chama `conceder_permissao_inicial`, que cadastra o operador e concede `conceder_permissao` com origem `inicial`. Os triggers auditam o operador e a concessão.
+
+  Toda essa auditoria fica com `papel_bd = safetycar_migrator` e sem ator. Um usuário já existente só é reaproveitado se tiver o mesmo `sub`, perfil central, o mesmo e-mail e status `ativo`.
+- **Já há detentor vigente** de `conceder_permissao`: a concessão inicial é recusada (SC018). O script mostra o id do detentor e o caminho de recuperação acima (`revogar_permissao_manual` e depois rodar o script de novo), **mas não o executa**.
+- **Um ambiente, um `sub`:** cada ambiente (por exemplo, trabalho e casa) tem o seu próprio Keycloak e, portanto, o seu próprio usuário e o seu próprio `keycloak_sub`, mesmo com o mesmo e-mail. O script roda **uma vez em cada ambiente**, com o `sub` daquele Keycloak. Nenhum `sub` ou e-mail real vai para o Git.
+- **Teste:** `bash db/scripts/testar_primeiro_administrador.sh`, fora da suíte padrão. Ele cria os bancos descartáveis `safetycar_adm` (migrado do zero) e `safetycar_adm_vazio` (sem a 0014) e os apaga no fim, mesmo com falha. Usa só dados fictícios. Cenários:
+  - argumentos e bancos inválidos;
+  - banco inexistente e banco sem a 0014;
+  - simulação sem nenhuma linha nova, nem de auditoria (o schema não tem sequências);
+  - resposta vazia, `CONFIRMO` ou nome de outro banco: nada gravado;
+  - gravação com a auditoria conferida (`papel_bd` e motivo, sem o e-mail);
+  - segunda execução recusada com SC018;
+  - outro perfil, e-mail de outro `sub`, e-mail divergente e status não ativo: abortam;
+  - reaproveitamento de um usuário central ativo.
 
 ### Reajuste de taxas em lote (0015)
 
