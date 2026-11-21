@@ -238,18 +238,40 @@ body[data-page-id="login-error"] #kc-header-wrapper::after {
 
 /* ------------------------------------------------------------------ campos */
 
+/*
+ * Contêiner do campo (span.pf-v5-c-form-control). Camadas, de baixo para cima:
+ *   fundo do contêiner → input (transparente; no autofill, preenchido com a mesma cor) →
+ *   ::before (ícone) e ::after (borda), ambos acima do input e sem capturar cliques.
+ * Assim o autofill do navegador não cobre nem o ícone nem a borda.
+ * As cores ficam em variáveis do próprio contêiner: o desktop e o erro só trocam os valores.
+ */
 .pf-v5-c-login .pf-v5-c-form-control {
+  position: relative;
   min-height: 52px;
   border-radius: 26px;
-  background: var(--sc-campo-fundo);
+  --sc-campo-fundo-atual: var(--sc-campo-fundo);
+  --sc-campo-anel: var(--sc-limao);
+  --sc-campo-anel-largura: 1.5px;
+  background: var(--sc-campo-fundo-atual);
   color: var(--sc-campo-texto);
-  box-shadow: inset 0 0 0 1.5px var(--sc-limao);
+  box-shadow: none;
 }
 
-/* As bordas do PatternFly são pseudo-elementos; a borda aqui é o box-shadow acima. */
-.pf-v5-c-login .pf-v5-c-form-control::before,
-.pf-v5-c-login .pf-v5-c-form-control::after {
+/* O PatternFly desenha as bordas nesses pseudo-elementos; aqui eles viram ícone e borda. */
+.pf-v5-c-login .pf-v5-c-form-control::before {
+  content: none;
   border: 0 !important;
+}
+
+.pf-v5-c-login .pf-v5-c-form-control::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 0 !important;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 var(--sc-campo-anel-largura) var(--sc-campo-anel);
+  pointer-events: none;
+  z-index: 2;
 }
 
 .pf-v5-c-login .pf-v5-c-form-control > input,
@@ -257,7 +279,7 @@ body[data-page-id="login-error"] #kc-header-wrapper::after {
   height: 52px;
   padding: 0 20px;
   border: 0;
-  border-radius: 26px;
+  border-radius: inherit;
   background-color: transparent;
   color: var(--sc-campo-texto);
   font-family: var(--pf-v5-global--FontFamily--text);
@@ -265,33 +287,51 @@ body[data-page-id="login-error"] #kc-header-wrapper::after {
   outline: none;
 }
 
-/* Autopreenchimento do navegador: mantém o fundo do campo e o ícone. */
-.pf-v5-c-login .pf-v5-c-form-control > input:-webkit-autofill {
+/*
+ * Autopreenchimento do navegador: o fundo que ele impõe é coberto por uma sombra interna da
+ * cor do campo, e o texto mantém a cor do tema. Regra separada: um seletor desconhecido
+ * invalidaria a lista inteira.
+ */
+.pf-v5-c-login .pf-v5-c-form-control > input:-webkit-autofill,
+.pf-v5-c-login .pf-v5-c-form-control > input:-webkit-autofill:hover,
+.pf-v5-c-login .pf-v5-c-form-control > input:-webkit-autofill:focus,
+.pf-v5-c-login .pf-v5-c-form-control > input:-webkit-autofill:active {
+  -webkit-box-shadow: inset 0 0 0 1000px var(--sc-campo-fundo-atual);
+  box-shadow: inset 0 0 0 1000px var(--sc-campo-fundo-atual);
   -webkit-text-fill-color: var(--sc-campo-texto);
-  transition: background-color 600000s 0s;
+  caret-color: var(--sc-campo-texto);
 }
 
-/* Ícone à esquerda */
+/* Ícone à esquerda: no contêiner, não no input. */
+.pf-v5-c-login .pf-v5-c-form-control:has(> #username)::before,
+.pf-v5-c-login .pf-v5-c-form-control:has(> #kc-attempted-username)::before,
+.pf-v5-c-login .pf-v5-c-form-control:has(> #password)::before,
+.pf-v5-c-login .pf-v5-c-form-control:has(> #password-new)::before,
+.pf-v5-c-login .pf-v5-c-form-control:has(> #password-confirm)::before {
+  content: "";
+  position: absolute;
+  inset: auto;
+  left: 18px;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  transform: translateY(-50%);
+  background: var(--sc-icone-cadeado) center / contain no-repeat;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.pf-v5-c-login .pf-v5-c-form-control:has(> #username)::before,
+.pf-v5-c-login .pf-v5-c-form-control:has(> #kc-attempted-username)::before {
+  background-image: var(--sc-icone-usuario);
+}
+
 #username,
 #kc-attempted-username,
 #password,
 #password-new,
 #password-confirm {
-  padding-left: 48px !important;
-  background-repeat: no-repeat;
-  background-position: 18px center;
-  background-size: 20px 20px;
-}
-
-#username,
-#kc-attempted-username {
-  background-image: var(--sc-icone-usuario);
-}
-
-#password,
-#password-new,
-#password-confirm {
-  background-image: var(--sc-icone-cadeado);
+  padding-left: 48px;
 }
 
 /* Foco visível no campo inteiro */
@@ -316,7 +356,8 @@ body[data-page-id="login-error"] #kc-header-wrapper::after {
   height: 52px;
   display: flex;
   align-items: center;
-  z-index: 1;
+  /* Acima do ícone e da borda do campo (z-index 2). */
+  z-index: 3;
 }
 
 .pf-v5-c-login .pf-v5-c-input-group:has(> .pf-v5-c-input-group__item:not(.pf-m-fill)) .pf-v5-c-form-control > input {
@@ -437,10 +478,12 @@ body[data-page-id="login-error"] #kc-header-wrapper::after {
   font-weight: 600;
 }
 
-/* Campo com erro. No login, a mensagem fica no e-mail, mas as duas bordas ficam vermelhas. */
+/* Campo com erro (celular e desktop). No login, a mensagem fica no e-mail, mas as duas
+   bordas ficam vermelhas. */
 .pf-v5-c-login .pf-v5-c-form-control.pf-m-error,
 #kc-form-login:has(.pf-m-error) .pf-v5-c-form-control {
-  box-shadow: inset 0 0 0 2px var(--sc-erro-borda);
+  --sc-campo-anel: var(--sc-erro-borda);
+  --sc-campo-anel-largura: 2px;
 }
 
 .pf-v5-c-login .pf-v5-c-form-control__utilities {
@@ -654,10 +697,12 @@ body[data-page-id="login-error"] #kc-header-wrapper::after {
     font-weight: 700;
   }
 
+  /* Fundo e borda do campo (o autofill usa o mesmo fundo). O erro, de seletor mais
+     específico, continua valendo. */
   .pf-v5-c-login .pf-v5-c-form-control {
     border-radius: 12px;
-    background: var(--sc-claro-campo-fundo);
-    box-shadow: inset 0 0 0 1.5px var(--sc-claro-campo-borda);
+    --sc-campo-fundo-atual: var(--sc-claro-campo-fundo);
+    --sc-campo-anel: var(--sc-claro-campo-borda);
   }
 
   .pf-v5-c-login .pf-v5-c-form-control > input,
@@ -668,11 +713,6 @@ body[data-page-id="login-error"] #kc-header-wrapper::after {
   .pf-v5-c-login .pf-v5-c-form-control:has(> #otp),
   .pf-v5-c-login .pf-v5-c-form-control:has(> #totp) {
     border-radius: 12px;
-  }
-
-  .pf-v5-c-login .pf-v5-c-form-control.pf-m-error,
-  #kc-form-login:has(.pf-m-error) .pf-v5-c-form-control {
-    box-shadow: inset 0 0 0 2px var(--sc-erro-borda);
   }
 
   .pf-v5-c-login .pf-v5-c-form-control:focus-within,
@@ -709,8 +749,7 @@ body[data-page-id="login-error"] #kc-header-wrapper::after {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* Fora os inputs: o autopreenchimento depende da transição acima. */
-  .pf-v5-c-login *:not(input) {
+  .pf-v5-c-login * {
     transition: none !important;
   }
 }

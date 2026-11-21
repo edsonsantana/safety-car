@@ -122,6 +122,7 @@ As telas que o Keycloak hospeda (e-mail e senha, código do autenticador, cadast
   - formulário sobre #F4F7FB, com campos retangulares;
   - **botão azul-marinho #0B1F3A com texto branco**: o verde-limão fica só nos fundos escuros (regra do projeto);
   - rótulos #14233B e links #0B1F3A sublinhados.
+- **Ícones e autofill:** o ícone fica no `::before` e a borda no `::after` do contêiner do campo, acima do input. O autofill do navegador é neutralizado com uma sombra interna da cor do campo e `-webkit-text-fill-color`, sem transições longas nem JavaScript. Assim, ele não cobre nem o ícone nem a borda.
 - **Mensagem de erro de login genérica:** "E-mail ou senha inválidos." também no bloqueio temporário. Assim, a tela não revela se o e-mail existe.
 - **Segurança:** o tema não acrescenta nenhum script nem recurso externo, e a CSP do Keycloak (`frame-src 'self'; frame-ancestors 'self'; object-src 'none';`) não foi relaxada. Os scripts inline que restam são do template do próprio Keycloak.
 

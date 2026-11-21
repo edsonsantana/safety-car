@@ -237,7 +237,7 @@ test('desktop: botão azul-marinho com texto branco e nenhum verde-limão sobre 
     [...desktop.matchAll(/([^{}]+)\{[^{}]*\}/g)].flatMap((m) => m[1].split(',').map((s) => s.trim().replace(/\s+/g, ' '))),
   );
   const sobrando = regrasDeTopo(css)
-    .filter((r) => /--sc-limao/.test(r.corpo) && !/^--/.test(r.corpo.trim()))
+    .filter((r) => /--sc-limao/.test(r.corpo))
     .flatMap((r) => r.seletores)
     .filter((s) => s !== ':root' && !seletoresDesktop.has(s));
   assert.deepEqual(sobrando, [], 'regras com verde-limão sem sobrescrita no desktop');
