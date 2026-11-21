@@ -1,28 +1,62 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { axe } from 'vitest-axe';
+import type { Acesso } from './autenticacao/tipos.ts';
 import { Rotas } from './Rotas.tsx';
+import { renderizar, sessaoFalsa } from './testes/sessao.tsx';
 
-// A página inicial consulta GET /saude; aqui a consulta fica pendente.
+// /componentes consulta GET /saude; aqui a consulta fica pendente.
 beforeEach(() => {
   vi.stubGlobal('fetch', () => new Promise(() => undefined));
 });
 
-function abrir(caminho: string) {
-  return render(
-    <MemoryRouter initialEntries={[caminho]}>
-      <Rotas />
-    </MemoryRouter>,
-  );
+// /componentes é carregada sob demanda: com a suíte inteira em paralelo, a primeira carga
+// pode passar do 1 s padrão do findBy.
+const ESPERA_CARGA = { timeout: 10_000 };
+const LIMITE_TESTE_MS = 15_000;
+
+const CENTRAL: Acesso = { tipo: 'liberado', perfil: 'central' };
+
+/** Por padrão, um usuário ativo da Central (as áreas protegidas abrem). */
+function abrir(caminho: string, acesso: Acesso = CENTRAL) {
+  return renderizar(<Rotas />, { caminho, sessao: sessaoFalsa({ acesso }) });
 }
 
 describe('rotas', () => {
+  test('/ sem sessão é a tela de entrada', () => {
+    abrir('/', { tipo: 'anonimo' });
+    expect(screen.getByRole('heading', { level: 1, name: 'Safety Car' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Entrar' })).toBeInTheDocument();
+  });
+
+  test('/entrar (antigo) leva à tela de entrada', () => {
+    abrir('/entrar', { tipo: 'anonimo' });
+    expect(screen.getByRole('button', { name: 'Entrar' })).toBeInTheDocument();
+  });
+
   test.each([
-    ['/', 'Início'],
+    ['/tomador', 'tomador', 'Início do tomador'],
+    ['/parceiro', 'parceiro', 'Início do parceiro'],
+    ['/central', 'central', 'Painel da Central'],
+  ] as const)('%s abre para o perfil %s', (caminho, perfil, titulo) => {
+    abrir(caminho, { tipo: 'liberado', perfil });
+    expect(screen.getByRole('heading', { level: 1, name: titulo })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sair' })).toBeInTheDocument();
+  });
+
+  test.each(['/tomador', '/parceiro', '/central'])('%s sem sessão volta à entrada', (caminho) => {
+    abrir(caminho, { tipo: 'anonimo' });
+    expect(screen.getByRole('button', { name: 'Entrar' })).toBeInTheDocument();
+  });
+
+  test('/central com perfil tomador: Acesso restrito', () => {
+    abrir('/central', { tipo: 'liberado', perfil: 'tomador' });
+    expect(screen.getByRole('heading', { name: 'Esta área é restrita' })).toBeInTheDocument();
+  });
+
+  test.each([
     ['/cadastro', 'Cadastro'],
-    ['/entrar', 'Entrar'],
     ['/verificacao', 'Verificação'],
     ['/central', 'Painel da Central'],
     ['/nao-existe', 'Página não encontrada'],
@@ -34,15 +68,20 @@ describe('rotas', () => {
     });
   });
 
-  test('/componentes existe em desenvolvimento (carregada sob demanda)', async () => {
-    abrir('/componentes');
-    expect(
-      await screen.findByRole('heading', { level: 1, name: 'Componentes' }),
-    ).toBeInTheDocument();
-  });
+  test(
+    '/componentes existe em desenvolvimento (carregada sob demanda), com o estado da API',
+    async () => {
+      abrir('/componentes');
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Componentes' }, ESPERA_CARGA),
+      ).toBeInTheDocument();
+      expect(screen.getByText('Verificando a conexão com o servidor…')).toBeInTheDocument();
+    },
+    LIMITE_TESTE_MS,
+  );
 
   test.each(['/', '/central'])('%s tem "Pular para o conteúdo" como primeiro foco', async (c) => {
-    abrir(c);
+    abrir(c, c === '/' ? { tipo: 'anonimo' } : CENTRAL);
     await userEvent.tab();
     const link = screen.getByRole('link', { name: 'Pular para o conteúdo' });
     expect(link).toHaveFocus();
@@ -50,11 +89,16 @@ describe('rotas', () => {
     expect(screen.getByRole('main')).toHaveAttribute('id', 'conteudo');
   });
 
-  test.each(['/', '/central', '/componentes'])('%s sem falhas de acessibilidade', async (c) => {
-    const { container } = abrir(c);
-    await screen.findByRole('heading', { level: 1 });
-    expect(await axe(container)).toHaveNoViolations();
-  });
+  test.each(['/', '/central', '/componentes'])(
+    '%s sem falhas de acessibilidade',
+    async (c) => {
+      // Em "/", sem sessão (com sessão a entrada redireciona para o início do perfil).
+      const { container } = abrir(c, c === '/' ? { tipo: 'anonimo' } : CENTRAL);
+      await screen.findByRole('heading', { level: 1 }, ESPERA_CARGA);
+      expect(await axe(container)).toHaveNoViolations();
+    },
+    LIMITE_TESTE_MS,
+  );
 });
 
 describe('LayoutMovel', () => {

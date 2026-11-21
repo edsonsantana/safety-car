@@ -1,5 +1,7 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/inter';
+/* Playfair Display 700, só o subconjunto latino: usada apenas no nome da marca. */
+@import '@fontsource/playfair-display/latin-700.css';
 
 /*
  * Identidade visual da v8. Toda troca de cor passa pelo teste de contraste
@@ -10,6 +12,12 @@
   --color-*: initial;
 
   --color-marinho: #0b1f3a;
+  /* Fundo das telas de entrada (escuro, com os painéis diagonais). */
+  --color-fundo-escuro: #07162d;
+  /* Aro do indicador de carregamento e painel diagonal mais claro. */
+  --color-anel: #12335f;
+  /* Texto de apoio sobre o fundo escuro. */
+  --color-texto-claro: #b9c8e0;
   --color-limao: #d4ff00;
   --color-fundo: #f4f7fb;
   --color-branco: #ffffff;
@@ -19,7 +27,7 @@
   --color-borda: #c9d3e2;
   --color-borda-campo: #4a5a73;
   --color-link: #1f4e9e;
-  --color-erro: #9c1f30;
+  --color-erro: #a3261b;
 
   /* Selos de status (CSS da v8); o texto escrito no selo é sempre o sinal principal. */
   --color-selo-aprovado-fundo: #cdebd0;
@@ -40,6 +48,41 @@
   --color-aviso-erro-texto: #9c2530;
 
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  /* Só o nome da marca ("SAFETY CAR"). */
+  --font-marca: 'Playfair Display', Georgia, 'Times New Roman', serif;
+}
+
+/*
+ * Fundo das telas de entrada: azul quase preto com dois painéis diagonais suaves,
+ * em CSS puro (pseudo-elementos com clip-path, atrás do conteúdo).
+ */
+@layer components {
+  .fundo-diagonais {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    background-color: var(--color-fundo-escuro);
+  }
+
+  .fundo-diagonais::before,
+  .fundo-diagonais::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  .fundo-diagonais::before {
+    background-color: var(--color-marinho);
+    clip-path: polygon(0 12%, 100% 0, 100% 38%, 0 62%);
+  }
+
+  .fundo-diagonais::after {
+    background-color: var(--color-anel);
+    opacity: 0.45;
+    clip-path: polygon(0 74%, 100% 46%, 100% 72%, 0 100%);
+  }
 }
 
 @layer base {

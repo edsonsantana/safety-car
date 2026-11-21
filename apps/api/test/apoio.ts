@@ -1,7 +1,7 @@
 import { Writable } from 'node:stream';
 
 import type { VerificadorToken } from '../src/autenticacao.ts';
-import type { Banco } from '../src/banco.ts';
+import type { Acesso, Banco } from '../src/banco.ts';
 
 /** Destino de log em memória: guarda cada linha JSON emitida pelo pino. */
 export class LogCapturado extends Writable {
@@ -21,9 +21,20 @@ export class LogCapturado extends Writable {
   }
 }
 
-/** Banco falso: o comportamento do ping é escolhido pelo teste. */
-export function bancoFalso(ping: () => Promise<void>): Banco {
-  return { ping, encerrar: () => Promise.resolve() };
+/**
+ * Banco falso: o teste escolhe o ping e, se quiser, os usuários (keycloak_sub → acesso).
+ * buscarAcesso também pode ser trocado por inteiro (para simular falha).
+ */
+export function bancoFalso(
+  ping: () => Promise<void>,
+  usuarios: ReadonlyMap<string, Acesso> = new Map(),
+  buscarAcesso?: Banco['buscarAcesso'],
+): Banco {
+  return {
+    ping,
+    buscarAcesso: buscarAcesso ?? ((sub) => Promise.resolve(usuarios.get(sub))),
+    encerrar: () => Promise.resolve(),
+  };
 }
 
 export const bancoOk = (): Banco => bancoFalso(() => Promise.resolve());

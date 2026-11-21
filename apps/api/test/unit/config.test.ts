@@ -4,7 +4,7 @@ import { describe, test } from 'node:test';
 import { carregarConfig, ErroConfiguracao } from '../../src/config.ts';
 
 const SENHA = 'senha-ficticia-de-teste';
-const ISSUER = 'http://localhost:8080/realms/safetycar-dev';
+const ISSUER = 'http://localhost:8180/realms/safetycar-dev';
 const MINIMO = { API_DB_SENHA: SENHA, KEYCLOAK_ISSUER: ISSUER };
 
 function erroDe(ambiente: NodeJS.ProcessEnv): ErroConfiguracao {
@@ -30,7 +30,7 @@ describe('carregarConfig', () => {
         usuario: 'safetycar_app',
         senha: SENHA,
       },
-      keycloak: { issuer: ISSUER, audience: 'safetycar-api' },
+      keycloak: { issuer: ISSUER, audience: 'safetycar-api', azp: 'safetycar-web' },
     });
   });
 
@@ -76,7 +76,7 @@ describe('carregarConfig', () => {
   });
 
   test('KEYCLOAK_ISSUER precisa ser URL http(s); a barra final é removida', () => {
-    const erro = erroDe({ ...MINIMO, KEYCLOAK_ISSUER: 'localhost:8080' });
+    const erro = erroDe({ ...MINIMO, KEYCLOAK_ISSUER: 'localhost:8180' });
     assert.match(erro.problemas[0] ?? '', /^KEYCLOAK_ISSUER: deve ser uma URL http\(s\)/);
     const config = carregarConfig({ ...MINIMO, KEYCLOAK_ISSUER: `${ISSUER}/` });
     assert.equal(config.keycloak.issuer, ISSUER);

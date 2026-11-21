@@ -14,6 +14,15 @@ export default defineConfig(({ mode }) => {
   return {
     envDir: DIRETORIO_ENV,
     plugins: [react(), tailwindcss()],
+    build: {
+      rolldownOptions: {
+        // Segunda página: destino da renovação silenciosa do login (iframe oculto).
+        input: {
+          principal: 'index.html',
+          'renovar-sessao': 'renovar-sessao.html',
+        },
+      },
+    },
     server: {
       host: '127.0.0.1',
       proxy: {

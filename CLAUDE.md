@@ -39,16 +39,17 @@ Plataforma de assistência rodoviária conectada (guincho, mecânica e serviços
   - O chamado (fase seguinte) guardará o `regra_taxa.id` de cada componente e os valores usados; a regra antiga continua consultável por data e por id.
   - Fora do escopo: tela de administração e busca automática de índice (IPCA).
 - **Keycloak de desenvolvimento** no `docker-compose.yml` (26.8.2, `start-dev`, só em 127.0.0.1), com banco próprio (`keycloak-db`). O realm `safetycar-dev` é versionado em `keycloak/realms/safetycar-dev.json`, **sem usuários, senhas nem segredos**. O client `safetycar-web` é público, com PKCE S256 e `aud=safetycar-api`. Detalhes em `docs/KEYCLOAK.md`.
-- **Esqueleto do backend** em `apps/api` (Node 24 + TypeScript estrito; Fastify, `pg`, Zod, `jose` e pino-pretty em dev; testes com `node:test`). Ainda sem regra de negócio: `GET /saude` (SELECT 1) e `GET /eu` (valida o JWT do Keycloak e devolve o `keycloak_sub`).
+- **Esqueleto do backend** em `apps/api` (Node 24 + TypeScript estrito; Fastify, `pg`, Zod, `jose` e pino-pretty em dev; testes com `node:test`). Rotas: `GET /saude` (SELECT 1) e `GET /me` (ver Login abaixo).
   - Conecta só como `safetycar_app`: a configuração recusa `safetycar_migrator` e `postgres`, e a subida recusa papel superusuário ou com CREATE no schema `public`.
   - Configuração por variáveis de ambiente (`API_*` e `KEYCLOAK_*`, lidas do `.env` da raiz), validada na subida.
   - Log sem dados pessoais: sem corpo, query, cabeçalhos, IP, token nem `keycloak_sub`; o `detail` dos erros do PostgreSQL é removido.
   - SQL puro parametrizado, sem ORM nem construtor de consultas (decidido; reavaliar quando houver consultas reais).
-- **Esqueleto do frontend** em `apps/web` (React 19 + TypeScript estrito; Vite 8, Tailwind 4, React Router 7 declarativo; testes com Vitest, Testing Library e `vitest-axe`), conforme `docs/PLANO_FRONTEND.md`. Ainda sem autenticação nem formulários reais.
+- **Esqueleto do frontend** em `apps/web` (React 19 + TypeScript estrito; Vite 8, Tailwind 4, React Router 7 declarativo; testes com Vitest, Testing Library e `vitest-axe`), conforme `docs/PLANO_FRONTEND.md`. Ainda sem formulários reais.
   - Componentes-base em `src/componentes` (Botao, CampoTexto, CampoCodigo, IndicadorEtapas, CartaoAviso, SeloStatus); layouts móvel (390 px) e de painel em `src/layouts`; rotas vazias `/cadastro`, `/entrar`, `/verificacao` e `/central`; `/componentes` só em desenvolvimento (o build confere que ela não vai para o `dist/`).
   - Cores só pelos tokens do `@theme` em `src/estilos.css`; o teste de contraste roda no build. Verde-limão nunca sobre fundo claro.
   - A página inicial mostra o estado do `GET /saude` via proxy do Vite (`/api` → `API_URL_DEV`). Variáveis `VITE_*` vão para o navegador: nunca segredo nelas.
   - ESLint 10 com `overrides` relaxando só o peer do `eslint-plugin-jsx-a11y`. React Hook Form + Zod entram só com o primeiro formulário real.
+- **Login com Keycloak** (`oidc-client-ts`, PKCE S256, tokens só em memória; F5 por renovação silenciosa em `/renovar-sessao.html`): telas de entrada (`/`), "Entrando…" (`/entrando`) e Acesso restrito, com rotas por perfil. O perfil vem do `GET /me` da API (`usuario.perfil`/`status` pelo `keycloak_sub`; o `GET /eu` foi removido): 200 para ativo e pendente; o mesmo 403 para sem registro, suspenso, bloqueado e excluído. A API exige `azp = safetycar-web`. Keycloak na porta 8180 em desenvolvimento. Passo a passo do client e pendências (canal de "Falar com a Central", cadastro, tema do Keycloak) em `docs/DESENVOLVIMENTO.md`.
 
 ## Comandos
 ```bash

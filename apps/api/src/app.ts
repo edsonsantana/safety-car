@@ -6,7 +6,7 @@ import type { VerificadorToken } from './autenticacao.ts';
 import type { Banco } from './banco.ts';
 import { registrarTratamentoErros } from './erros.ts';
 import { opcoesLog } from './log.ts';
-import { rotaEu } from './rotas/eu.ts';
+import { rotaMe } from './rotas/me.ts';
 import { rotaSaude } from './rotas/saude.ts';
 
 export interface OpcoesApp {
@@ -52,7 +52,7 @@ export function construirApp(opcoes: OpcoesApp): FastifyInstance {
   app.decorateRequest('keycloakSub', '');
 
   rotaSaude(app, opcoes.banco, opcoes.tempoLimiteSaudeMs ?? 2_000);
-  rotaEu(app, opcoes.verificadorToken);
+  rotaMe(app, opcoes.verificadorToken, opcoes.banco);
 
   return app;
 }

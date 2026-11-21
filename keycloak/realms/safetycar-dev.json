@@ -49,11 +49,18 @@
       "serviceAccountsEnabled": false,
       "frontchannelLogout": true,
       "fullScopeAllowed": false,
-      "redirectUris": ["http://localhost:5173/*"],
+      "rootUrl": "http://localhost:5173",
+      "baseUrl": "http://localhost:5173",
+      "redirectUris": [
+        "http://localhost:5173/entrando",
+        "http://localhost:5173/renovar-sessao.html"
+      ],
       "webOrigins": ["http://localhost:5173"],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:5173/*",
+        "post.logout.redirect.uris": "http://localhost:5173/",
+        "use.refresh.tokens": "true",
+        "client.use.lightweight.access.token.enabled": "false",
         "oauth2.device.authorization.grant.enabled": "false",
         "oidc.ciba.grant.enabled": "false"
       },

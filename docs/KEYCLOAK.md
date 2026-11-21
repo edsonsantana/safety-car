@@ -12,17 +12,17 @@ docker compose up -d     # sobe db, keycloak-db e keycloak
 docker compose ps        # espere "healthy" no keycloak (a primeira subida leva cerca de 1 min)
 ```
 
-Os endereços abaixo usam a porta padrão 8080; troque pela sua `KEYCLOAK_PORTA` se for outra.
+Os endereços abaixo usam a porta de desenvolvimento 8180, que é a `KEYCLOAK_PORTA` do `.env.example`; troque pela sua se for outra. Sem a variável, o `docker-compose.yml` publica na 8080.
 
-- **Console de administração:** http://localhost:8080/admin. O usuário e a senha são `KEYCLOAK_ADMIN_USUARIO` e `KEYCLOAK_ADMIN_SENHA` do `.env`. Esse administrador do realm `master` só é criado na **primeira** subida: mudar o `.env` depois não muda a senha.
-- **Descoberta OIDC do realm:** http://localhost:8080/realms/safetycar-dev/.well-known/openid-configuration
+- **Console de administração:** http://localhost:8180/admin. O usuário e a senha são `KEYCLOAK_ADMIN_USUARIO` e `KEYCLOAK_ADMIN_SENHA` do `.env`. Esse administrador do realm `master` só é criado na **primeira** subida: mudar o `.env` depois não muda a senha.
+- **Descoberta OIDC do realm:** http://localhost:8180/realms/safetycar-dev/.well-known/openid-configuration
 - **Recomeçar o Keycloak do zero** apaga usuários e configurações feitas no console, mas não toca no banco de negócio:
   ```bash
   docker compose rm -sf keycloak keycloak-db
   docker volume rm safetycar_keycloak_pgdata
   docker compose up -d
   ```
-- **Trocar a porta:** a porta publicada é `KEYCLOAK_PORTA` (padrão 8080). No Windows a 8080 pode estar reservada pelo sistema (erro *"forbidden by its access permissions"*); confira com `netsh interface ipv4 show excludedportrange protocol=tcp` e escolha uma porta livre, por exemplo 8180. Ao trocar, ajuste **também** o `KEYCLOAK_ISSUER` (ex.: `http://localhost:8180/realms/safetycar-dev`): o `--env-file` do Node não expande `${KEYCLOAK_PORTA}`. Depois, `docker compose up -d` recria o contêiner com o novo `KC_HOSTNAME`; o realm e os usuários não são afetados (o hostname não fica no banco). As redirect URIs do realm não mudam: apontam para o Vite (5173), não para o Keycloak.
+- **Trocar a porta:** a porta publicada é `KEYCLOAK_PORTA` (8180 no `.env.example`; 8080 se a variável faltar). No Windows a 8080 costuma estar reservada pelo sistema (erro *"forbidden by its access permissions"*); confira com `netsh interface ipv4 show excludedportrange protocol=tcp`. Ao trocar, ajuste **também** o `KEYCLOAK_ISSUER` da API (ex.: `http://localhost:8180/realms/safetycar-dev`) e o `VITE_KEYCLOAK_URL` do frontend (ex.: `http://localhost:8180`): nem o Node nem o Vite expandem `${KEYCLOAK_PORTA}` no `.env`. Depois, `docker compose up -d` recria o contêiner com o novo `KC_HOSTNAME`; o realm e os usuários não são afetados (o hostname não fica no banco). As redirect URIs do realm não mudam: apontam para o Vite (5173), não para o Keycloak.
 
 ## Contêineres
 
@@ -56,19 +56,24 @@ Arquivo versionado em `keycloak/realms/safetycar-dev.json`. A importação acont
 
 ### Client `safetycar-web`
 
-É o cliente do frontend (`apps/web`, ainda não criado).
+É o cliente do frontend (`apps/web`), que usa o `oidc-client-ts` (Authorization Code com PKCE S256, tokens só em memória). Passo a passo no console e funcionamento do login: [`docs/DESENVOLVIMENTO.md`](DESENVOLVIMENTO.md#login-keycloak-no-app-e-na-api).
 
 | Configuração | Valor |
 |---|---|
 | Tipo | **público** (`publicClient: true`), **sem segredo** |
 | Fluxo | Authorization Code com **PKCE obrigatório, método S256** |
 | Implicit, Direct Access Grants (senha direta), Service Account, Device, CIBA | desligados |
-| Redirect URIs e logout | `http://localhost:5173/*` (servidor de desenvolvimento do Vite) |
-| Web origins | `http://localhost:5173` |
+| Root URL e Home URL | `http://localhost:5173` (servidor de desenvolvimento do Vite) |
+| Valid redirect URIs | **exatas**, sem curinga: `http://localhost:5173/entrando` (retorno do login) e `http://localhost:5173/renovar-sessao.html` (renovação silenciosa, iframe oculto) |
+| Valid post logout redirect URIs | `http://localhost:5173/` |
+| Web origins | `http://localhost:5173` (CORS da troca do código pelo token, feita pelo navegador) |
+| Front channel logout | ligado |
+| Use refresh tokens | ligado (o refresh token fica só na memória do app) |
+| Lightweight access token | desligado |
 | `fullScopeAllowed` | `false`: o token não carrega papéis que o client não pediu |
 | Mapeador `audiencia-safetycar-api` | acrescenta `aud: "safetycar-api"` ao **token de acesso**. É o valor que a API exige (`KEYCLOAK_AUDIENCE`) |
 
-A API não é um client do Keycloak: ela só **valida** tokens (assinatura via JWKS, `iss`, `aud` e `exp`). Por isso não existe segredo de cliente nenhum.
+A API não é um client do Keycloak: ela só **valida** tokens (assinatura via JWKS, `iss`, `aud`, `azp` igual a `safetycar-web` e `exp`). Por isso não existe segredo de cliente nenhum.
 
 ## Como conferir
 
@@ -78,11 +83,11 @@ Lendo a configuração do próprio Keycloak, com um token de administrador do re
 set -a; . ./.env; set +a
 TOKEN=$(curl -s -d grant_type=password -d client_id=admin-cli \
   --data-urlencode "username=$KEYCLOAK_ADMIN_USUARIO" --data-urlencode "password=$KEYCLOAK_ADMIN_SENHA" \
-  "http://localhost:${KEYCLOAK_PORTA:-8080}/realms/master/protocol/openid-connect/token" | python -c "import json,sys;print(json.load(sys.stdin)['access_token'])")
-curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:${KEYCLOAK_PORTA:-8080}/admin/realms/safetycar-dev/clients?clientId=safetycar-web"
-curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:${KEYCLOAK_PORTA:-8080}/admin/realms/safetycar-dev/users/count"   # 0 depois da importação
+  "http://localhost:${KEYCLOAK_PORTA:-8180}/realms/master/protocol/openid-connect/token" | python -c "import json,sys;print(json.load(sys.stdin)['access_token'])")
+curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:${KEYCLOAK_PORTA:-8180}/admin/realms/safetycar-dev/clients?clientId=safetycar-web"
+curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:${KEYCLOAK_PORTA:-8180}/admin/realms/safetycar-dev/users/count"   # 0 depois da importação
 ```
 
 ## Usuário de teste local
 
-Pelo console: realm **safetycar-dev** → *Users* → *Create user*. Use um e-mail fictício (por exemplo, `teste@exemplo.com`) e defina a senha em *Credentials*. Esse usuário existe só no seu volume local. Nunca o registre no Git nem em ambiente compartilhado.
+Pelo console: realm **safetycar-dev** → *Users* → *Create user*. Use um e-mail fictício (por exemplo, `teste@exemplo.invalid`) e defina a senha em *Credentials*. Esse usuário existe só no seu volume local. Nunca o registre no Git nem em ambiente compartilhado.

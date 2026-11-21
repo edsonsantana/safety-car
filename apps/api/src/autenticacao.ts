@@ -36,6 +36,8 @@ const FORMATO_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 export interface OpcoesVerificador {
   issuer: string;
   audience: string;
+  /** Client que pediu o token ("azp"); só tokens emitidos para o nosso frontend. */
+  azp: string;
   /** Chaves de verificação. Padrão: JWKS remoto do realm (os testes passam chaves locais). */
   chaves?: JWTVerifyGetKey;
 }
@@ -83,6 +85,7 @@ export function criarVerificadorKeycloak(opcoes: OpcoesVerificador): Verificador
 
       // Keycloak marca o token de acesso com typ "Bearer"; recusa ID token e refresh token.
       if (payload.typ !== 'Bearer') throw new TokenInvalido('typ diferente de Bearer');
+      if (payload.azp !== opcoes.azp) throw new TokenInvalido('azp diferente do client esperado');
       const sub = payload.sub;
       if (sub === undefined || !FORMATO_UUID.test(sub)) {
         throw new TokenInvalido('sub ausente ou fora do formato uuid');

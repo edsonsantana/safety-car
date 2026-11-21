@@ -14,6 +14,11 @@ test('o dist/ existe e tem o index.html', () => {
   assert.ok(arquivos.some((a) => a.endsWith('index.html')));
 });
 
+test('o dist/ tem a página da renovação silenciosa e o logo', () => {
+  assert.ok(arquivos.some((a) => a.endsWith('renovar-sessao.html')));
+  assert.ok(arquivos.some((a) => a.endsWith('logo-icone.png')));
+});
+
 test('a página /componentes não está no dist/', () => {
   for (const arquivo of arquivos) {
     assert.doesNotMatch(arquivo, /Componentes/, `arquivo da página de demonstração: ${arquivo}`);

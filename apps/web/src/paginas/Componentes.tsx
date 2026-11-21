@@ -7,6 +7,7 @@ import { CampoTexto } from '../componentes/CampoTexto.tsx';
 import { CartaoAviso } from '../componentes/CartaoAviso.tsx';
 import { IndicadorEtapas } from '../componentes/IndicadorEtapas.tsx';
 import { SeloStatus } from '../componentes/SeloStatus.tsx';
+import { EstadoApi } from './EstadoApi.tsx';
 import { Titulo } from './Titulo.tsx';
 
 export default function Componentes() {
@@ -16,6 +17,10 @@ export default function Componentes() {
       <p className="text-sm text-texto-sec">
         Demonstração dos componentes-base (só em desenvolvimento).
       </p>
+
+      <Secao titulo="Estado da API">
+        <EstadoApi />
+      </Secao>
 
       <Secao titulo="Botões">
         <div className="flex flex-wrap gap-2">

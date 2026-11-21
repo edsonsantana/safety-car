@@ -38,10 +38,12 @@ const esquema = z.object({
   // Realm do Keycloak cujos tokens a API aceita (o "iss" do token deve ser exatamente este).
   KEYCLOAK_ISSUER: texto()
     .refine((valor) => URL.canParse(valor) && /^https?:$/.test(new URL(valor).protocol), {
-      message: 'deve ser uma URL http(s), ex.: http://localhost:8080/realms/safetycar-dev',
+      message: 'deve ser uma URL http(s), ex.: http://localhost:8180/realms/safetycar-dev',
     })
     .transform((valor) => valor.replace(/\/+$/, '')),
   KEYCLOAK_AUDIENCE: texto('safetycar-api'),
+  // Client do frontend: o "azp" do token precisa ser este (token emitido para o nosso app).
+  KEYCLOAK_CLIENT_ID: texto('safetycar-web'),
 });
 
 export interface Config {
@@ -54,7 +56,12 @@ export interface Config {
     readonly usuario: string;
     readonly senha: string;
   };
-  readonly keycloak: { readonly issuer: string; readonly audience: string };
+  readonly keycloak: {
+    readonly issuer: string;
+    readonly audience: string;
+    /** Valor exigido no "azp" do token. */
+    readonly azp: string;
+  };
 }
 
 /** Configuração inválida. A mensagem lista as variáveis e o motivo, nunca o valor. */
@@ -97,6 +104,10 @@ export function carregarConfig(ambiente: NodeJS.ProcessEnv = process.env): Confi
       usuario: v.API_DB_USUARIO,
       senha: v.API_DB_SENHA,
     },
-    keycloak: { issuer: v.KEYCLOAK_ISSUER, audience: v.KEYCLOAK_AUDIENCE },
+    keycloak: {
+      issuer: v.KEYCLOAK_ISSUER,
+      audience: v.KEYCLOAK_AUDIENCE,
+      azp: v.KEYCLOAK_CLIENT_ID,
+    },
   };
 }

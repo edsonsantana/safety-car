@@ -61,6 +61,16 @@ const paresEmUso: [string, string, number, string][] = [
   ['marinho', 'fundo', COMPONENTE, 'anel de foco e contorno no fundo claro'],
   ['marinho', 'branco', COMPONENTE, 'anel de foco em cartão'],
   ['limao', 'marinho', COMPONENTE, 'anel de foco sobre o azul-marinho'],
+  // Telas de entrada: o texto pode cair sobre o fundo escuro ou sobre qualquer painel
+  // diagonal (marinho e anel; o anel, a 45%, é conferido opaco, o caso mais claro).
+  ...(['fundo-escuro', 'marinho', 'anel'] as const).flatMap(
+    (fundo): [string, string, number, string][] => [
+      ['branco', fundo, TEXTO, 'nome da marca e link "Criar conta" na entrada'],
+      ['limao', fundo, TEXTO, 'faixa, "Entrando…" e "Sair" na entrada'],
+      ['texto-claro', fundo, TEXTO, 'texto de apoio e rodapé na entrada'],
+      ['limao', fundo, COMPONENTE, 'anel de foco na entrada'],
+    ],
+  ),
 ];
 
 describe('contraste das cores do @theme', () => {

@@ -3,11 +3,39 @@ import pg from 'pg';
 import type { Config } from './config.ts';
 import { NOME_SERVICO } from './identidade.ts';
 
+export type Perfil = 'tomador' | 'parceiro' | 'central';
+export type StatusUsuario = 'pendente' | 'ativo' | 'suspenso' | 'bloqueado' | 'excluido';
+
+/** O mínimo para decidir o acesso: perfil e status de usuario (CHECK no banco). */
+export interface Acesso {
+  perfil: Perfil;
+  status: StatusUsuario;
+}
+
 /** O que a API precisa do banco nesta etapa. Interface para os testes trocarem por um falso. */
 export interface Banco {
   /** Confere se o banco responde (SELECT 1). Rejeita se não responder. */
   ping(): Promise<void>;
+  /** Perfil e status do usuário vinculado ao sub do Keycloak; undefined se não há registro. */
+  buscarAcesso(keycloakSub: string): Promise<Acesso | undefined>;
   encerrar(): Promise<void>;
+}
+
+/** Pool ou cliente avulso (o teste de integração usa um cliente dentro de transação). */
+interface Executor {
+  query<R extends pg.QueryResultRow>(texto: string, valores: unknown[]): Promise<pg.QueryResult<R>>;
+}
+
+/** Busca só perfil e status: nada de e-mail, celular ou id sai daqui. */
+export async function consultarAcesso(
+  executor: Executor,
+  keycloakSub: string,
+): Promise<Acesso | undefined> {
+  const { rows } = await executor.query<Acesso>(
+    'SELECT perfil, status FROM usuario WHERE keycloak_sub = $1',
+    [keycloakSub],
+  );
+  return rows[0];
 }
 
 /** O papel conectado não serve para a API (superusuário ou com permissão de DDL). */
@@ -38,6 +66,9 @@ export function criarBanco(pool: pg.Pool): Banco {
   return {
     async ping() {
       await pool.query('SELECT 1');
+    },
+    buscarAcesso(keycloakSub) {
+      return consultarAcesso(pool, keycloakSub);
     },
     async encerrar() {
       await pool.end();
