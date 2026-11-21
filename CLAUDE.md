@@ -55,6 +55,9 @@ Plataforma de assistência rodoviária conectada (guincho, mecânica e serviços
 ```bash
 docker compose up -d                                # banco, Keycloak e banco do Keycloak
 bash db/scripts/criar_papeis.sh                     # só em volume antigo: cria safetycar_central (idempotente)
+bash db/scripts/criar_papeis.sh --verificar         # login de cada papel com a senha do .env (ok/FALHOU), só leitura
+bash db/scripts/criar_papeis.sh --sincronizar       # ALTER ROLE só nos papéis cuja senha diverge do .env (pede confirmação)
+bash db/scripts/testar_senhas.sh                    # à parte: testa os dois modos num contêiner descartável, removido no fim
 bash db/scripts/migrar.sh                           # migrações no banco safetycar
 bash db/scripts/testar.sh                           # testes do banco (recria safetycar_teste)
 bash db/scripts/testar_concorrencia.sh              # à parte: duas sessões simultâneas (0014 e 0015) em safetycar_conc, apagado no fim

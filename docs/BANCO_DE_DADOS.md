@@ -27,6 +27,9 @@ Pré-requisitos: Docker Desktop rodando e Git Bash (no Windows). Nada é instala
 cp .env.example .env          # troque TODOS os valores (senhas fortes)
 docker compose up -d          # sobe o banco; espere "healthy" em: docker compose ps
 bash db/scripts/criar_papeis.sh  # só em volume antigo: cria safetycar_central (0014)
+bash db/scripts/criar_papeis.sh --verificar    # login de cada papel com a senha do .env: ok ou FALHOU
+bash db/scripts/criar_papeis.sh --sincronizar  # alinha com o .env a senha dos papéis que falharem
+bash db/scripts/testar_senhas.sh  # à parte: testa os dois modos acima num contêiner descartável
 bash db/scripts/migrar.sh     # aplica as migrações pendentes no banco "safetycar"
 bash db/scripts/testar.sh     # recria "safetycar_teste" do zero, migra duas vezes e roda db/tests
 bash db/scripts/testar_concorrencia.sh  # à parte: duas sessões simultâneas em "safetycar_conc" (0014 e 0015)
@@ -45,6 +48,12 @@ bash db/scripts/testar_primeiro_administrador.sh  # à parte: testa o script aci
   - Timeouts: `lock_timeout` de 15 s e `statement_timeout` de 30 s por sessão, 60 s por processo e 10 s por espera. O `deadlock_timeout` fica no padrão (1 s), para que um 40P01 apareça de fato.
   - Cada verificação imprime `OK` ou `FALHOU` com o SQLSTATE recebido. O script sai com código 1 se alguma falhar. Os cenários estão na [pendência 17](#pendências-não-decididas).
 - `criar_papeis.sh`: cria, num volume **já existente**, os papéis que vieram depois do volume (hoje o `safetycar_central`). É idempotente: papel existente mantém a senha e só reafirma os atributos. Lê `SAFETYCAR_CENTRAL_PASSWORD` do `.env` sem executá-lo, nunca imprime a senha nem a passa na linha de comando (vai ao `psql` do contêiner por variável de ambiente e `\getenv`), e recusa o valor de exemplo (`trocar-*`) e senha com menos de 16 caracteres. Em volume novo, quem cria o papel é o `db/init/01_papeis.sh`, que exige a variável.
+  - As senhas do `.env` só valem na **criação do volume**. Trocar uma senha no `.env` depois não muda o papel, e a API passa a falhar com `password authentication failed`. Os scripts não percebem, porque entram pelo socket do contêiner, que não pede senha.
+  - Variáveis por papel: `safetycar_migrator` → `SAFETYCAR_MIGRATOR_PASSWORD`; `safetycar_app` → `SAFETYCAR_APP_PASSWORD`, e a API usa `API_DB_SENHA`, que **deve ser igual**; `safetycar_central` → `SAFETYCAR_CENTRAL_PASSWORD`.
+  - `--verificar` (só leitura): conecta como cada papel por TCP dentro do contêiner. O host é o nome do contêiner, não o loopback, que no `pg_hba.conf` da imagem é `trust`. Imprime só `ok` ou `FALHOU` e avisa, sem mostrar valores, se `API_DB_SENHA`, `API_DB_USUARIO` ou `API_DB_PORTA` não baterem com as variáveis dos papéis.
+  - `--sincronizar`: aplica as mesmas regras de senha aos três papéis e exige `API_DB_SENHA` igual a `SAFETYCAR_APP_PASSWORD`. Roda `ALTER ROLE … PASSWORD` (como `postgres`, pelo socket) **só nos papéis cujo login falhou**, depois de pedir o nome do banco como confirmação, e confere de novo no fim. Não cria papel. Rodar outra vez não altera nada.
+  - Sigilo: a senha vai ao contêiner por `docker exec -e NOME` (sem o valor) e ao `psql` por `\getenv`, com o SQL na entrada padrão. Na sessão do `ALTER ROLE`, `log_statement` e `log_min_error_statement` são desligados, para que a senha não vá ao log do servidor nem em caso de erro. Resta só o texto do comando em `pg_stat_activity` durante a execução, visível ao superusuário.
+  - `testar_senhas.sh`: os papéis valem para o servidor inteiro, então o teste sobe um **contêiner próprio** (mesma imagem, sem porta, dados em memória, `log_statement=all`), criado pelo `db/init` com senhas fictícias, e o remove no fim. Confere os dois modos, as recusas e que nenhuma senha gravada aparece na saída do script nem no `docker logs`.
 - Conexão a partir do computador: `127.0.0.1:${DB_PORTA}`, banco `safetycar`, usuário `safetycar_app` (ou `safetycar_migrator`) e a senha do `.env`. A porta só é publicada em 127.0.0.1.
 - Recomeçar do zero apaga todos os dados locais: `docker compose down -v` e depois `docker compose up -d`. O script `db/init/01_papeis.sh` só roda quando o volume é novo.
 
