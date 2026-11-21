@@ -71,6 +71,9 @@ services:
       - "127.0.0.1:${KEYCLOAK_PORTA:-8080}:8080"
     volumes:
       - ./keycloak/realms:/opt/keycloak/data/import:ro
+      # Tema de login do Safety Car (só leitura). No start-dev o cache de temas fica desligado:
+      # mudanças no CSS aparecem ao recarregar a página.
+      - ./keycloak/themes/safetycar:/opt/keycloak/themes/safetycar:ro
     depends_on:
       keycloak-db:
         condition: service_healthy

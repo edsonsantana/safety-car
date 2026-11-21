@@ -1,0 +1,716 @@
+/*
+ * Tema de login do Safety Car (Keycloak 26.8.2, pai keycloak.v2 / PatternFly 5).
+ * Só CSS: nenhum template .ftl sobrescrito. As telas são identificadas pelo
+ * data-page-id do <body> ("login-<template>").
+ *
+ * Celular (padrão): fundo escuro com painéis diagonais, cartão translúcido, campos em pílula
+ * com borda verde-limão e botão verde-limão.
+ * Desktop (>= 960px): painel azul à esquerda (560px) e formulário em fundo claro. Verde-limão
+ * nunca sobre fundo claro: lá o botão é azul-marinho com texto branco.
+ *
+ * Recursos só do próprio tema (fontes, logo) ou SVG embutido (data:). Nenhuma URL externa.
+ * Contraste dos pares de texto conferido em keycloak/tests/tema.test.mjs, que lê os valores
+ * abaixo: ao mudar uma cor, rode o teste.
+ */
+
+@font-face {
+  font-family: "Inter";
+  src: url("../fonts/inter-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Playfair Display";
+  src: url("../fonts/playfair-display-latin-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* Fundo escuro */
+  --sc-fundo: #07162D;
+  --sc-diagonal-1: rgba(38, 94, 170, 0.22);
+  --sc-diagonal-2: rgba(38, 94, 170, 0.12);
+  --sc-cartao: rgba(255, 255, 255, 0.10);
+  --sc-cartao-borda: rgba(255, 255, 255, 0.28);
+  --sc-texto-escuro-fundo: #FFFFFF;
+  --sc-rotulo-escuro-fundo: #E3ECFA;
+  --sc-limao: #D4FF00;
+  --sc-marinho: #0B1F3A;
+
+  /* Campos (celular) */
+  --sc-campo-fundo: #EAF0F8;
+  --sc-campo-texto: #14233B;
+
+  /* Erro */
+  --sc-erro-fundo: #FFE9E7;
+  --sc-erro-texto: #7A1A12;
+  --sc-erro-borda: #FF8A80;
+
+  /* Painel claro (desktop) */
+  --sc-claro-fundo: #F4F7FB;
+  --sc-claro-texto: #14233B;
+  --sc-claro-link: #0B1F3A;
+  --sc-claro-campo-fundo: #FFFFFF;
+  --sc-claro-campo-borda: #C9D3E2;
+  --sc-claro-botao-fundo: #0B1F3A;
+  --sc-claro-botao-texto: #FFFFFF;
+
+  /* Fontes do PatternFly */
+  --pf-v5-global--FontFamily--text: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --pf-v5-global--FontFamily--heading: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Ícones dos campos (traço #14233B) */
+  --sc-icone-usuario: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2314233B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7'/%3E%3C/svg%3E");
+  --sc-icone-cadeado: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2314233B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='11' width='16' height='10' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E");
+  --sc-icone-erro: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237A1A12' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 7v6M12 17h.01'/%3E%3C/svg%3E");
+}
+
+/* ------------------------------------------------------------------ base (celular) */
+
+html.login-pf,
+.login-pf body {
+  background-color: var(--sc-fundo);
+}
+
+.login-pf body {
+  /* Dois painéis diagonais azuis suaves sobre o fundo (substitui a imagem do tema pai). */
+  background:
+    linear-gradient(118deg, transparent 0 46%, var(--sc-diagonal-1) 46% 64%, transparent 64%),
+    linear-gradient(118deg, transparent 0 64%, var(--sc-diagonal-2) 64% 86%, transparent 86%),
+    var(--sc-fundo);
+  background-attachment: fixed;
+  min-height: 100%;
+  font-family: var(--pf-v5-global--FontFamily--text);
+  color: var(--sc-texto-escuro-fundo);
+}
+
+.pf-v5-c-login {
+  padding: 24px 16px 32px;
+  min-height: 100vh;
+  align-items: flex-start;
+}
+
+.pf-v5-c-login__container {
+  grid-template-columns: minmax(0, 420px);
+  justify-content: center;
+  width: 100%;
+  max-width: none;
+  margin: 0 auto;
+  padding: 0;
+}
+
+/* Cabeçalho: nome e logo */
+.pf-v5-c-login__header {
+  padding: 8px 0 20px;
+  margin: 0;
+  color: var(--sc-texto-escuro-fundo);
+}
+
+#kc-header-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  font-family: var(--pf-v5-global--FontFamily--text);
+  font-size: 16px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+#kc-header-wrapper .sc-nome {
+  font-family: "Playfair Display", Georgia, serif;
+  font-weight: 700;
+  font-size: 28px;
+  line-height: 1.15;
+  letter-spacing: 3px;
+  color: var(--sc-texto-escuro-fundo);
+}
+
+/* Logo decorativo (o nome já está em texto). */
+#kc-header-wrapper::after {
+  content: "";
+  display: block;
+  width: 150px;
+  height: 150px;
+  background: url("../img/logo-icone.png") center / contain no-repeat;
+}
+
+body[data-page-id="login-login-otp"] #kc-header-wrapper::after,
+body[data-page-id="login-error"] #kc-header-wrapper::after {
+  width: 130px;
+  height: 130px;
+}
+
+/* A frase do cabeçalho só aparece no desktop. */
+#kc-header-wrapper .sc-lema {
+  display: none;
+}
+
+/* Cartão */
+.pf-v5-c-login__main {
+  background: var(--sc-cartao);
+  border: 1px solid var(--sc-cartao-borda);
+  border-radius: 20px;
+  padding: 22px 20px;
+  box-shadow: none;
+  margin: 0;
+  color: var(--sc-texto-escuro-fundo);
+}
+
+.pf-v5-c-login__main-header,
+.pf-v5-c-login__main-body,
+.pf-v5-c-login__main-footer {
+  padding: 0;
+  border: 0;
+}
+
+.pf-v5-c-login__main-header {
+  margin-bottom: 18px;
+}
+
+.pf-v5-c-login__main-footer:empty {
+  display: none;
+}
+
+.pf-v5-c-login__main-footer-band {
+  border: 0;
+  padding: 16px 0 0;
+  margin: 0;
+  background: transparent;
+  color: var(--sc-texto-escuro-fundo);
+  text-align: center;
+}
+
+#kc-page-title {
+  font-family: var(--pf-v5-global--FontFamily--heading);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--sc-texto-escuro-fundo);
+  text-align: center;
+}
+
+.pf-v5-c-login__main-body,
+.pf-v5-c-login__main-body p,
+.pf-v5-c-list,
+.pf-v5-c-helper-text__item-text {
+  color: var(--sc-texto-escuro-fundo);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+/* Rótulos */
+.pf-v5-c-form__label,
+.pf-v5-c-form__label-text {
+  color: var(--sc-rotulo-escuro-fundo);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pf-v5-c-form__label-required {
+  color: var(--sc-rotulo-escuro-fundo);
+}
+
+.pf-v5-c-form__group-label {
+  padding-bottom: 6px;
+}
+
+/* Links */
+.pf-v5-c-login a,
+.pf-v5-c-login .pf-v5-c-button.pf-m-link {
+  color: var(--sc-texto-escuro-fundo);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.pf-v5-c-login a:hover {
+  text-decoration-thickness: 2px;
+}
+
+#kc-registration a {
+  color: var(--sc-limao);
+  font-weight: 700;
+}
+
+/* ------------------------------------------------------------------ campos */
+
+.pf-v5-c-login .pf-v5-c-form-control {
+  min-height: 52px;
+  border-radius: 26px;
+  background: var(--sc-campo-fundo);
+  color: var(--sc-campo-texto);
+  box-shadow: inset 0 0 0 1.5px var(--sc-limao);
+}
+
+/* As bordas do PatternFly são pseudo-elementos; a borda aqui é o box-shadow acima. */
+.pf-v5-c-login .pf-v5-c-form-control::before,
+.pf-v5-c-login .pf-v5-c-form-control::after {
+  border: 0 !important;
+}
+
+.pf-v5-c-login .pf-v5-c-form-control > input,
+.pf-v5-c-login .pf-v5-c-form-control > select {
+  height: 52px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 26px;
+  background-color: transparent;
+  color: var(--sc-campo-texto);
+  font-family: var(--pf-v5-global--FontFamily--text);
+  font-size: 16px;
+  outline: none;
+}
+
+/* Autopreenchimento do navegador: mantém o fundo do campo e o ícone. */
+.pf-v5-c-login .pf-v5-c-form-control > input:-webkit-autofill {
+  -webkit-text-fill-color: var(--sc-campo-texto);
+  transition: background-color 600000s 0s;
+}
+
+/* Ícone à esquerda */
+#username,
+#kc-attempted-username,
+#password,
+#password-new,
+#password-confirm {
+  padding-left: 48px !important;
+  background-repeat: no-repeat;
+  background-position: 18px center;
+  background-size: 20px 20px;
+}
+
+#username,
+#kc-attempted-username {
+  background-image: var(--sc-icone-usuario);
+}
+
+#password,
+#password-new,
+#password-confirm {
+  background-image: var(--sc-icone-cadeado);
+}
+
+/* Foco visível no campo inteiro */
+.pf-v5-c-login .pf-v5-c-form-control:focus-within {
+  outline: 3px solid var(--sc-texto-escuro-fundo);
+  outline-offset: 2px;
+}
+
+.pf-v5-c-login .pf-v5-c-form-control.pf-m-readonly {
+  opacity: 1;
+}
+
+/* Botões dentro do campo (mostrar senha, reiniciar login): sobre o campo, à direita. */
+.pf-v5-c-login .pf-v5-c-input-group {
+  position: relative;
+}
+
+.pf-v5-c-login .pf-v5-c-input-group > .pf-v5-c-input-group__item:not(.pf-m-fill) {
+  position: absolute;
+  top: 0;
+  right: 6px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  z-index: 1;
+}
+
+.pf-v5-c-login .pf-v5-c-input-group:has(> .pf-v5-c-input-group__item:not(.pf-m-fill)) .pf-v5-c-form-control > input {
+  padding-right: 52px;
+}
+
+.pf-v5-c-login .pf-v5-c-button.pf-m-control {
+  width: 42px;
+  height: 42px;
+  border-radius: 21px;
+  background: transparent;
+  color: var(--sc-campo-texto);
+}
+
+.pf-v5-c-login .pf-v5-c-button.pf-m-control::after {
+  border: 0;
+}
+
+.pf-v5-c-login .pf-v5-c-button.pf-m-control:focus-visible {
+  outline: 3px solid var(--sc-campo-texto);
+  outline-offset: -3px;
+}
+
+.kc-login-tooltip .kc-tooltip-text {
+  display: none;
+}
+
+/* Código do autenticador: campo único, grande e centralizado (sem caixas nem JavaScript). */
+#otp,
+#totp {
+  height: 60px;
+  padding: 0 12px;
+  text-align: center;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.45em;
+  font-variant-numeric: tabular-nums;
+}
+
+.pf-v5-c-login .pf-v5-c-form-control:has(> #otp),
+.pf-v5-c-login .pf-v5-c-form-control:has(> #totp) {
+  min-height: 60px;
+  border-radius: 30px;
+}
+
+/* ------------------------------------------------------------------ botões */
+
+.pf-v5-c-login .pf-v5-c-button.pf-m-primary {
+  min-height: 54px;
+  width: 100%;
+  border-radius: 27px;
+  background-color: var(--sc-limao);
+  color: var(--sc-marinho);
+  font-family: var(--pf-v5-global--FontFamily--text);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.pf-v5-c-login .pf-v5-c-button.pf-m-primary::after {
+  border: 0;
+}
+
+.pf-v5-c-login .pf-v5-c-button.pf-m-primary:hover {
+  filter: brightness(0.94);
+}
+
+.pf-v5-c-login .pf-v5-c-button.pf-m-secondary {
+  min-height: 48px;
+  border-radius: 24px;
+  background: transparent;
+  color: var(--sc-texto-escuro-fundo);
+  box-shadow: inset 0 0 0 1.5px var(--sc-texto-escuro-fundo);
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.pf-v5-c-login .pf-v5-c-button.pf-m-secondary::after {
+  border: 0;
+}
+
+.pf-v5-c-login .pf-v5-c-button:focus-visible,
+.pf-v5-c-login a:focus-visible,
+.pf-v5-c-login input[type="checkbox"]:focus-visible {
+  outline: 3px solid var(--sc-texto-escuro-fundo);
+  outline-offset: 3px;
+}
+
+.pf-v5-c-form__actions {
+  margin-top: 8px;
+}
+
+/* ------------------------------------------------------------------ erro */
+
+/* Erro do campo (ex.: "E-mail ou senha inválidos."): caixa com ícone. */
+.pf-v5-c-login .pf-v5-c-helper-text__item.pf-m-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--sc-erro-fundo);
+}
+
+.pf-v5-c-login .pf-v5-c-helper-text__item.pf-m-error::before {
+  content: "";
+  flex: 0 0 18px;
+  height: 18px;
+  margin-top: 2px;
+  background: var(--sc-icone-erro) center / contain no-repeat;
+}
+
+.pf-v5-c-login .pf-v5-c-helper-text__item.pf-m-error .pf-v5-c-helper-text__item-text {
+  color: var(--sc-erro-texto);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Campo com erro. No login, a mensagem fica no e-mail, mas as duas bordas ficam vermelhas. */
+.pf-v5-c-login .pf-v5-c-form-control.pf-m-error,
+#kc-form-login:has(.pf-m-error) .pf-v5-c-form-control {
+  box-shadow: inset 0 0 0 2px var(--sc-erro-borda);
+}
+
+.pf-v5-c-login .pf-v5-c-form-control__utilities {
+  color: var(--sc-erro-texto);
+}
+
+/* Alertas do topo do formulário */
+.pf-v5-c-login .pf-v5-c-alert {
+  border-radius: 12px;
+  box-shadow: none;
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.pf-v5-c-login .pf-v5-c-alert::before {
+  display: none;
+}
+
+.pf-v5-c-login .pf-v5-c-alert .pf-v5-c-alert__title,
+.pf-v5-c-login .pf-v5-c-alert .pf-v5-c-alert__icon {
+  color: inherit;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pf-v5-c-login .pf-v5-c-alert.pf-m-danger {
+  background: var(--sc-erro-fundo);
+  color: var(--sc-erro-texto);
+}
+
+.pf-v5-c-login .pf-v5-c-alert.pf-m-danger .pf-v5-c-alert__icon {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  background: var(--sc-icone-erro) center / contain no-repeat;
+}
+
+.pf-v5-c-login .pf-v5-c-alert.pf-m-danger .pf-v5-c-alert__icon > * {
+  display: none;
+}
+
+.pf-v5-c-login .pf-v5-c-alert.pf-m-info,
+.pf-v5-c-login .pf-v5-c-alert.pf-m-success,
+.pf-v5-c-login .pf-v5-c-alert.pf-m-warning {
+  background: var(--sc-campo-fundo);
+  color: var(--sc-campo-texto);
+}
+
+/* ------------------------------------------------------------------ cadastro do autenticador (QR) */
+
+#kc-totp-settings {
+  list-style: none;
+  counter-reset: passo;
+  padding: 0;
+  margin: 0 0 20px;
+}
+
+#kc-totp-settings > li {
+  counter-increment: passo;
+  position: relative;
+  padding-left: 40px;
+  margin: 0 0 16px;
+}
+
+#kc-totp-settings > li::before {
+  content: counter(passo);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--sc-limao);
+  color: var(--sc-marinho);
+  font-weight: 800;
+  font-size: 14px;
+}
+
+#kc-totp-settings > li p {
+  margin: 0 0 8px;
+}
+
+#kc-totp-supported-apps {
+  list-style: disc;
+  padding-left: 20px;
+  margin: 0;
+}
+
+.kc-qr-code img {
+  width: 200px;
+  height: 200px;
+  padding: 12px;
+  box-sizing: content-box;
+  background: #FFFFFF;
+  border: 0;
+  border-radius: 16px;
+  box-shadow: none;
+}
+
+#kc-totp-secret-key {
+  display: inline-block;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--sc-campo-fundo);
+  color: var(--sc-campo-texto);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 15px;
+  word-break: break-all;
+}
+
+/* ------------------------------------------------------------------ desktop */
+
+@media (min-width: 960px) {
+  .login-pf body {
+    background: var(--sc-claro-fundo);
+    color: var(--sc-claro-texto);
+  }
+
+  .pf-v5-c-login {
+    padding: 0;
+    min-height: 100vh;
+    display: block;
+  }
+
+  .pf-v5-c-login__container {
+    grid-template-columns: 560px minmax(0, 1fr);
+    grid-template-areas: "header main";
+    min-height: 100vh;
+    gap: 0;
+  }
+
+  /* Painel azul à esquerda (fundo escuro: aqui o verde-limão e o branco continuam valendo). */
+  .pf-v5-c-login__header {
+    grid-area: header;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 56px;
+    background:
+      linear-gradient(118deg, transparent 0 46%, var(--sc-diagonal-1) 46% 64%, transparent 64%),
+      linear-gradient(118deg, transparent 0 64%, var(--sc-diagonal-2) 64% 86%, transparent 86%),
+      var(--sc-fundo);
+  }
+
+  #kc-header-wrapper {
+    gap: 24px;
+  }
+
+  #kc-header-wrapper .sc-nome {
+    font-size: 38px;
+    order: 1;
+  }
+
+  #kc-header-wrapper::after,
+  body[data-page-id="login-login-otp"] #kc-header-wrapper::after,
+  body[data-page-id="login-error"] #kc-header-wrapper::after {
+    order: 2;
+    width: 260px;
+    height: 260px;
+  }
+
+  #kc-header-wrapper .sc-lema {
+    display: block;
+    order: 3;
+    max-width: 400px;
+    color: var(--sc-rotulo-escuro-fundo);
+    font-size: 18px;
+    line-height: 1.5;
+    text-align: center;
+  }
+
+  /* Formulário sobre fundo claro */
+  .pf-v5-c-login__main {
+    grid-area: main;
+    align-self: center;
+    justify-self: center;
+    width: min(440px, calc(100% - 64px));
+    padding: 48px 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    color: var(--sc-claro-texto);
+  }
+
+  #kc-page-title {
+    font-size: 28px;
+    text-align: left;
+    color: var(--sc-claro-texto);
+  }
+
+  .pf-v5-c-login__main-body,
+  .pf-v5-c-login__main-body p,
+  .pf-v5-c-list,
+  .pf-v5-c-helper-text__item-text,
+  .pf-v5-c-login__main-footer-band,
+  .pf-v5-c-form__label,
+  .pf-v5-c-form__label-text,
+  .pf-v5-c-form__label-required {
+    color: var(--sc-claro-texto);
+  }
+
+  .pf-v5-c-login__main a,
+  .pf-v5-c-login__main .pf-v5-c-button.pf-m-link,
+  #kc-registration a {
+    color: var(--sc-claro-link);
+  }
+
+  #kc-registration a {
+    font-weight: 700;
+  }
+
+  .pf-v5-c-login .pf-v5-c-form-control {
+    border-radius: 12px;
+    background: var(--sc-claro-campo-fundo);
+    box-shadow: inset 0 0 0 1.5px var(--sc-claro-campo-borda);
+  }
+
+  .pf-v5-c-login .pf-v5-c-form-control > input,
+  .pf-v5-c-login .pf-v5-c-form-control > select {
+    border-radius: 12px;
+  }
+
+  .pf-v5-c-login .pf-v5-c-form-control:has(> #otp),
+  .pf-v5-c-login .pf-v5-c-form-control:has(> #totp) {
+    border-radius: 12px;
+  }
+
+  .pf-v5-c-login .pf-v5-c-form-control.pf-m-error,
+  #kc-form-login:has(.pf-m-error) .pf-v5-c-form-control {
+    box-shadow: inset 0 0 0 2px var(--sc-erro-borda);
+  }
+
+  .pf-v5-c-login .pf-v5-c-form-control:focus-within,
+  .pf-v5-c-login__main .pf-v5-c-button:focus-visible,
+  .pf-v5-c-login__main a:focus-visible,
+  .pf-v5-c-login__main input[type="checkbox"]:focus-visible {
+    outline-color: var(--sc-claro-link);
+  }
+
+  .pf-v5-c-login .pf-v5-c-button.pf-m-primary {
+    border-radius: 12px;
+    background-color: var(--sc-claro-botao-fundo);
+    color: var(--sc-claro-botao-texto);
+  }
+
+  .pf-v5-c-login .pf-v5-c-button.pf-m-primary:hover {
+    filter: brightness(1.25);
+  }
+
+  .pf-v5-c-login .pf-v5-c-button.pf-m-secondary {
+    border-radius: 12px;
+    color: var(--sc-claro-link);
+    box-shadow: inset 0 0 0 1.5px var(--sc-claro-link);
+  }
+
+  #kc-totp-settings > li::before {
+    background: var(--sc-claro-botao-fundo);
+    color: var(--sc-claro-botao-texto);
+  }
+
+  .kc-qr-code img {
+    border: 1px solid var(--sc-claro-campo-borda);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Fora os inputs: o autopreenchimento depende da transição acima. */
+  .pf-v5-c-login *:not(input) {
+    transition: none !important;
+  }
+}
