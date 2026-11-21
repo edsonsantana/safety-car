@@ -51,6 +51,7 @@ Arquivo versionado em `keycloak/realms/safetycar-dev.json`. A importação acont
 | Token de acesso | 5 min | |
 | Sessão | 30 min ociosa, 10 h no máximo | |
 | Idioma | pt-BR | |
+| Tema de login | `safetycar` | identidade do Safety Car (ver [Tema de login](#tema-de-login-safetycar)) |
 | **OTP** | TOTP, HmacSHA1, 6 dígitos, 30 s, janela 1, código não reutilizável | compatível com Google Authenticator e Microsoft Authenticator (regra de segurança do projeto) |
 | 2FA obrigatório | **não configurado** | a regra (incentivado para o tomador, obrigatório para parceiro e Central) é proposta, a confirmar |
 
@@ -91,3 +92,90 @@ curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:${KEYCLOAK_PORTA:-81
 ## Usuário de teste local
 
 Pelo console: realm **safetycar-dev** → *Users* → *Create user*. Use um e-mail fictício (por exemplo, `teste@exemplo.invalid`) e defina a senha em *Credentials*. Esse usuário existe só no seu volume local. Nunca o registre no Git nem em ambiente compartilhado.
+
+## Tema de login `safetycar`
+
+As telas que o Keycloak hospeda (e-mail e senha, código do autenticador, cadastro do autenticador com QR, troca de senha, esqueci a senha e erro) usam o tema `keycloak/themes/safetycar/login/`. Ele é montado **somente leitura** em `/opt/keycloak/themes/safetycar`. O app nunca toca em senha.
+
+### Estrutura
+
+| Arquivo | O que faz |
+|---|---|
+| `theme.properties` | `parent=keycloak.v2`, o tema de login padrão da 26 (PatternFly 5). Acrescenta `css/safetycar.css` depois do CSS do pai. `darkMode=false`, porque a identidade é fixa; isso também tira o script de modo escuro do pai |
+| `resources/css/safetycar.css` | todo o visual. As cores são variáveis `--sc-*` no `:root`; os ícones são SVG embutidos (`data:`) |
+| `resources/img/logo-icone.png` | cópia do `apps/web/public/logo-icone.png` |
+| `resources/fonts/` | Inter (variável, latin) e Playfair Display 700 (latin), copiadas dos pacotes `@fontsource` do `apps/web`, com as licenças OFL |
+| `messages/messages_pt_BR.properties` | só os textos que mudam: cabeçalho, mensagem genérica de credencial inválida, OTP, QR, erro e outros |
+
+- **Nenhum template `.ftl` é sobrescrito.** Cada `.ftl` copiado teria de ser reconciliado a cada upgrade do Keycloak. O que dependeria de template sai por outros meios:
+  - **Cabeçalho:** a mensagem `loginTitleHtml` traz `<span class="sc-nome">` e `<span class="sc-lema">`, que o `kcSanitize` aceita.
+  - **Logo:** pseudo-elemento no CSS.
+  - **Variações por tela:** o `<body data-page-id="login-…">`. Por exemplo, o logo de 130 px em `login-login-otp` e `login-error`.
+- **OTP:** o tema pai já põe `inputmode="numeric"` e `autocomplete="one-time-code"` no campo. Ele fica único, grande e com espaçamento entre os dígitos, sem caixas separadas e sem JavaScript.
+- **Celular** (até 959 px):
+  - fundo #07162D com dois painéis diagonais e cartão translúcido;
+  - campos em pílula com borda verde-limão;
+  - botão verde-limão com texto #0B1F3A;
+  - links brancos e "Criar conta" em #D4FF00.
+- **Desktop** (a partir de 960 px):
+  - painel azul de 560 px com nome, logo de 260 px e uma frase neutra, que serve a tomador, parceiro e Central;
+  - formulário sobre #F4F7FB, com campos retangulares;
+  - **botão azul-marinho #0B1F3A com texto branco**: o verde-limão fica só nos fundos escuros (regra do projeto);
+  - rótulos #14233B e links #0B1F3A sublinhados.
+- **Mensagem de erro de login genérica:** "E-mail ou senha inválidos." também no bloqueio temporário. Assim, a tela não revela se o e-mail existe.
+- **Segurança:** o tema não acrescenta nenhum script nem recurso externo, e a CSP do Keycloak (`frame-src 'self'; frame-ancestors 'self'; object-src 'none';`) não foi relaxada. Os scripts inline que restam são do template do próprio Keycloak.
+
+### Ativar
+
+- **Volume novo:** o `safetycar-dev.json` já traz `"loginTheme": "safetycar"`.
+- **Realm já existente:**
+  1. `docker compose up -d keycloak`: recria o contêiner com o volume do tema. Usuários e configuração ficam no `keycloak-db` e não são afetados.
+  2. Console → realm **safetycar-dev** → *Realm settings* → *Themes* → *Login theme* = **safetycar** → *Save*.
+  3. *Realm settings* → *Localization*: confira *Internationalization* **On**, *Default locale* **pt-BR** e só o pt-BR suportado.
+
+No `start-dev`, o cache de temas fica desligado: mudanças no CSS ou nas mensagens aparecem ao recarregar a página.
+
+### Testar
+
+```bash
+node --test keycloak/tests/tema.test.mjs   # estrutura, sem Keycloak rodando
+bash keycloak/scripts/conferir_tema.sh     # no Keycloak local: só leitura
+```
+
+- **`tema.test.mjs`** confere:
+  - o tema pai e as propriedades;
+  - que os arquivos referenciados existem e que não há URL externa nem `@import`;
+  - que não há nenhum `.ftl`;
+  - que as mensagens estão em UTF-8 e sem script;
+  - que as fontes têm licença;
+  - o **contraste de 4,5:1** de cada par de texto, calculado das variáveis do `:root`, com o cartão translúcido composto sobre o fundo e sobre cada painel diagonal;
+  - que o desktop não usa verde-limão e tem o botão #0B1F3A com texto branco;
+  - o `loginTheme` no realm.
+- **`conferir_tema.sh`** confere:
+  - que o tema está montado e o volume é somente leitura;
+  - que a página de login está em pt-BR e usa o tema;
+  - que não há o script de modo escuro;
+  - que a CSP está idêntica;
+  - que não há nenhum host externo;
+  - que cada CSS, script, fonte e imagem responde 200 com o tipo certo.
+
+**Checklist manual.** Use um usuário fictício `@exemplo.invalid`. Confira cada tela em 390 px e em 1280 px: no teclado (foco visível em campos, botões e links), com zoom de 200 %, e confira que nenhum texto fica em inglês.
+- [ ] **E-mail e senha:** a tela de entrada do app (`http://localhost:5173`) → ENTRAR.
+- [ ] **Erro de login:** senha errada. Esperado: caixa vermelho-clara com ícone, "E-mail ou senha inválidos.", os dois campos com borda vermelha.
+- [ ] **Cadastro do autenticador (QR):** *Users* → usuário → *Required user actions* = *Configure OTP*. No próximo login, confira os passos numerados, o QR sobre fundo branco e o link "Não consegue ler o código QR?", que mostra a chave.
+- [ ] **Código do autenticador:** depois de cadastrado, no login seguinte. Esperado: campo único, numérico, centralizado, e o logo de 130 px.
+- [ ] **Troca de senha:** *Required user actions* = *Update Password*.
+- [ ] **Esqueci a senha:** fica desligada no realm. Para ver a tela, ligue temporariamente *Realm settings* → *Login* → *Forgot password* e desligue depois. Sem SMTP, o envio falha.
+- [ ] **Página de erro:** abra a URL de login com `redirect_uri=http://localhost:5173/nao-existe`.
+
+### Upgrade do Keycloak
+
+O tema depende das classes do PatternFly 5 (`pf-v5-c-*`) e da estrutura do `template.ftl` do `keycloak.v2`: `#kc-header-wrapper`, `data-page-id`, `#kc-totp-settings` e `.kc-qr-code`. Ao trocar a versão da imagem:
+1. Rode os dois testes.
+2. Repasse o checklist.
+3. Se o pai mudou de PatternFly (por exemplo, para o v6), revise o `safetycar.css`.
+
+### Pendências do tema
+
+- O favicon ainda é o do Keycloak. Falta um `.ico` do Safety Car.
+- A borda dos campos no desktop (#C9D3E2 sobre #F4F7FB) foi a aprovada no protótipo, mas tem contraste baixo para limite de componente (WCAG 1.4.11 pede 3:1). O rótulo acima e o foco forte compensam. Reavaliar na revisão de acessibilidade.

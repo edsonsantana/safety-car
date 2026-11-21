@@ -49,7 +49,8 @@ Plataforma de assistência rodoviária conectada (guincho, mecânica e serviços
   - Cores só pelos tokens do `@theme` em `src/estilos.css`; o teste de contraste roda no build. Verde-limão nunca sobre fundo claro.
   - A página inicial mostra o estado do `GET /saude` via proxy do Vite (`/api` → `API_URL_DEV`). Variáveis `VITE_*` vão para o navegador: nunca segredo nelas.
   - ESLint 10 com `overrides` relaxando só o peer do `eslint-plugin-jsx-a11y`. React Hook Form + Zod entram só com o primeiro formulário real.
-- **Login com Keycloak** (`oidc-client-ts`, PKCE S256, tokens só em memória; F5 por renovação silenciosa em `/renovar-sessao.html`): telas de entrada (`/`), "Entrando…" (`/entrando`) e Acesso restrito, com rotas por perfil. O perfil vem do `GET /me` da API (`usuario.perfil`/`status` pelo `keycloak_sub`; o `GET /eu` foi removido): 200 para ativo e pendente; o mesmo 403 para sem registro, suspenso, bloqueado e excluído. A API exige `azp = safetycar-web`. Keycloak na porta 8180 em desenvolvimento. Passo a passo do client e pendências (canal de "Falar com a Central", cadastro, tema do Keycloak) em `docs/DESENVOLVIMENTO.md`.
+- **Login com Keycloak** (`oidc-client-ts`, PKCE S256, tokens só em memória; F5 por renovação silenciosa em `/renovar-sessao.html`): telas de entrada (`/`), "Entrando…" (`/entrando`) e Acesso restrito, com rotas por perfil. O perfil vem do `GET /me` da API (`usuario.perfil`/`status` pelo `keycloak_sub`; o `GET /eu` foi removido): 200 para ativo e pendente; o mesmo 403 para sem registro, suspenso, bloqueado e excluído. A API exige `azp = safetycar-web`. Keycloak na porta 8180 em desenvolvimento. Passo a passo do client e pendências (canal de "Falar com a Central", cadastro) em `docs/DESENVOLVIMENTO.md`.
+- **Tema de login do Keycloak** `safetycar` em `keycloak/themes/safetycar/login` (pai `keycloak.v2`, montado só leitura). Só CSS, mensagens pt-BR e recursos próprios (logo, Inter e Playfair com licença OFL): **nenhum `.ftl` sobrescrito**, nenhum script nem URL externa, CSP do Keycloak intacta. Celular escuro (verde-limão); desktop em duas colunas com o formulário claro e **botão #0B1F3A com texto branco** (limão só em fundo escuro). Erro de login genérico. Realm existente: escolher o tema no console. Detalhes, checklist e upgrade em `docs/KEYCLOAK.md`.
 
 ## Comandos
 ```bash
@@ -63,6 +64,8 @@ bash db/scripts/testar.sh                           # testes do banco (recria sa
 bash db/scripts/testar_concorrencia.sh              # à parte: duas sessões simultâneas (0014 e 0015) em safetycar_conc, apagado no fim
 bash db/scripts/primeiro_administrador.sh --email … --sub … [--simular]  # 1º administrador da Central, uma vez por ambiente
 bash db/scripts/testar_primeiro_administrador.sh    # à parte: testa o script acima em bancos descartáveis, apagados no fim
+node --test keycloak/tests/tema.test.mjs            # estrutura e contraste do tema de login
+bash keycloak/scripts/conferir_tema.sh              # tema montado e em uso no Keycloak local (só leitura)
 cd apps/api && npm ci                               # dependências da API
 npm run dev | test | test:integracao | lint | build  # em apps/api
 cd apps/web && npm ci                               # dependências do frontend

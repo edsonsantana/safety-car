@@ -146,5 +146,5 @@ Para entrar, o usuário precisa existir no Keycloak **e** ter uma linha em `usua
 
 - **"Falar com a Central"** não aparece em Acesso restrito até haver um canal definido (telefone, WhatsApp ou e-mail).
 - **Cadastro pelo app:** "Criar conta" está pronto, mas desligado (`VITE_CADASTRO_HABILITADO=false` e cadastro desligado no realm). Falta decidir o fluxo e o provisionamento da linha em `usuario`.
-- **Tema do Keycloak** (telas de e-mail e senha, código e erro com a identidade visual): próxima etapa.
+- **Tema do Keycloak:** feito (tema de login `safetycar`). Ativação, testes e checklist em [`docs/KEYCLOAK.md`](KEYCLOAK.md#tema-de-login-safetycar).
 - **Pendente × restrito:** a API já separa `pendente` (200) de sem registro, suspenso, bloqueado e excluído (o mesmo 403), mas o app ainda trata os dois como Acesso restrito, com o mesmo texto ("Sua conta ainda não foi liberada para esta área.").
