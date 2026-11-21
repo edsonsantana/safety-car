@@ -88,7 +88,8 @@ if [[ -n "$css_url" ]]; then
   # url("../...") do CSS do tema (os data: ficam de fora).
   while read -r r; do
     case "$r" in
-      *.woff2) confere_recurso "$dir_recursos/$r" '^font/woff2' ;;
+      # O Keycloak serve .woff2 como application/octet-stream; o nosniff não bloqueia fontes.
+      *.woff2) confere_recurso "$dir_recursos/$r" '^(font/woff2|application/octet-stream)' ;;
       *.png)   confere_recurso "$dir_recursos/$r" '^image/png' ;;
       *)       confere_recurso "$dir_recursos/$r" '.' ;;
     esac
