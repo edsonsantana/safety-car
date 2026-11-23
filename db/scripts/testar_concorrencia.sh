@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Testes de concorrência da 0014, da 0015 e da 0016 com DUAS SESSÕES SIMULTÂNEAS de verdade.
+# Testes de concorrência da 0014 a 0017 com DUAS SESSÕES SIMULTÂNEAS de verdade.
 # Fora da suíte padrão (o testar.sh roda uma sessão por arquivo e não cobre isto).
 #
 #   bash db/scripts/testar_concorrencia.sh
@@ -376,6 +376,44 @@ if confere_sessoes SC023; then
      AND EXISTS (SELECT 1 FROM vw_permissao_vigente WHERE permissao_codigo = 'conceder_permissao' AND operador_id = '$U1' AND efetiva)"
 else
   falhou "7b: $MOTIVO"
+fi
+
+# ---------------------------------------------------------------------------------------------
+# 0017: definição da primeira tarifa em lote. U1 segue titular de conceder_permissao (7a/7b).
+sql >/dev/null <<SQL
+SELECT conceder_permissao('$U1', s::uuid, 'solicitar_reajuste_taxa', '[TESTE] conc: solicitante')
+  FROM unnest(ARRAY['$S1','$S2']) s;
+SQL
+J8='[{"tipo_parceiro":"guincho","servico":"guincho_pesado","nacional":true,"componente":"base","valor":30000}]'
+J9='[{"tipo_parceiro":"guincho","servico":"guincho_pesado","nacional":true,"componente":"minimo","valor":8000}]'
+
+echo "== Cenário 8: duas aprovações simultâneas do MESMO lote de definição"
+L8="$(sql -c "SELECT solicitar_definicao_taxa('$S1', '$J8'::jsonb, '[TESTE] conc 8: lote')")"
+aprova_def() { echo "SELECT aprovar_definicao_taxa('$1', '$2', '[TESTE] conc: aprovação');"; }
+corrida safetycar_central "$(aprova_def "$P1" "$L8")" safetycar_central "$(aprova_def "$P2" "$L8")"
+if confere_sessoes SC020; then
+  ok "P1 aprovou; P2 esperou ($ESPERA_B) e terminou em SC020"
+  confere "uma única decisão e uma única regra definida: 30000, contígua à regra a definir que encerrou" \
+    "(SELECT count(*) FROM definicao_taxa_decisao WHERE definicao_id = '$L8') = 1
+     AND (SELECT count(*) FROM regra_taxa WHERE definicao_id = '$L8') = 1
+     AND (SELECT valor FROM regra_taxa_vigente('guincho', 'guincho_pesado', NULL, 'base')) = 30000
+     AND (SELECT o.fim_vigencia = n.inicio_vigencia AND o.situacao = 'a_definir'
+            FROM regra_taxa n JOIN regra_taxa o ON o.id = n.regra_origem_id WHERE n.definicao_id = '$L8')"
+else
+  falhou "8: $MOTIVO"
+fi
+
+echo "== Cenário 9: duas solicitações simultâneas de definição no mesmo escopo"
+corrida safetycar_central "SELECT solicitar_definicao_taxa('$S1', '$J9'::jsonb, '[TESTE] conc 9: A');" \
+        safetycar_central "SELECT solicitar_definicao_taxa('$S2', '$J9'::jsonb, '[TESTE] conc 9: B');"
+if confere_sessoes SC024; then
+  ok "A solicitou; B esperou ($ESPERA_B) e terminou em SC024"
+  confere "um único lote cobre o mínimo do guincho pesado, o de S1" \
+    "(SELECT count(*) FROM definicao_taxa_item WHERE servico_codigo = 'guincho_pesado' AND componente = 'minimo') = 1
+     AND (SELECT d.solicitado_por = '$S1' FROM definicao_taxa d JOIN definicao_taxa_item i ON i.definicao_id = d.id
+           WHERE i.servico_codigo = 'guincho_pesado' AND i.componente = 'minimo')"
+else
+  falhou "9: $MOTIVO"
 fi
 
 # ---------------------------------------------------------------------------------------------
