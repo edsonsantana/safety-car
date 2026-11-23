@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Testes de concorrência da 0014 a 0018 com DUAS SESSÕES SIMULTÂNEAS de verdade.
+# Testes de concorrência da 0014 a 0019 com DUAS SESSÕES SIMULTÂNEAS de verdade.
 # Fora da suíte padrão (o testar.sh roda uma sessão por arquivo e não cobre isto).
 #
 #   bash db/scripts/testar_concorrencia.sh
@@ -250,6 +250,9 @@ SELECT cadastrar_operador('$U3', u::uuid, '[TESTE] conc: equipe')
   FROM unnest(ARRAY['$S1','$S2','$P1','$P2','$OP']) u;
 SELECT conceder_permissao('$U3', p::uuid, 'aprovar_reajuste_taxa', '[TESTE] conc: aprovador')
   FROM unnest(ARRAY['$P1','$P2']) p;
+-- Desde a 0019, solicitar exige solicitar_reajuste_taxa.
+SELECT conceder_permissao('$U3', s::uuid, 'solicitar_reajuste_taxa', '[TESTE] conc: solicitante')
+  FROM unnest(ARRAY['$S1','$S2']) s;
 INSERT INTO regra_taxa (tipo_parceiro_codigo, servico_codigo, uf, componente, unidade, valor, situacao, observacao) VALUES
   ('chaveiro', 'guincho_leve',   NULL, 'base',   'centavos', 20000, 'definido', '[TESTE] conc 2'),
   ('chaveiro', 'pneu',           NULL, 'base',   'centavos', 10005, 'definido', '[TESTE] conc 3'),
@@ -259,17 +262,18 @@ INSERT INTO regra_taxa (tipo_parceiro_codigo, servico_codigo, uf, componente, un
   ('chaveiro', 'mecanica_movel', NULL, 'base',   'centavos', 50000, 'definido', '[TESTE] conc 6');
 SQL
 
-# solicita <ator> <pb> <serviço> <componentes>: imprime o id do lote (percentual, chaveiro, nacional).
-solicita() {
-  sql -c "SELECT solicitar_reajuste_taxa('$1', 'percentual', $2, NULL, '{chaveiro}', '{$3}', NULL, true,
-                                         '{$4}', false, '[TESTE] conc: lote')"
+# Desde a 0019: percentual (em %), início na aprovação, um lote em aberto por escopo (SC024).
+# sol_sql <ator> <percentual> <serviço> <componentes>: o SQL da solicitação (chaveiro, nacional).
+sol_sql() {
+  echo "SELECT solicitar_reajuste_taxa('$1', $2, '{chaveiro}', '{$3}', NULL, NULL, true, '{$4}', false, '[TESTE] conc: lote');"
 }
-L2="$(solicita "$S1" 1000 guincho_leve base)"
-L3A="$(solicita "$S1" 1000 pneu base,minimo)"
-L3B="$(solicita "$S2" 500 pneu base)"
-L4A="$(solicita "$S1" 1000 bateria base)"
-L4B="$(solicita "$S2" 1000 combustivel base)"
-L6="$(solicita "$S1" 1000 mecanica_movel base)"
+# solicita <ator> <percentual> <serviço> <componentes>: imprime o id do lote.
+solicita() { sql -c "$(sol_sql "$@")"; }
+L2="$(solicita "$S1" 10 guincho_leve base)"
+L3A="$(solicita "$S1" 10 pneu base,minimo)"
+L4A="$(solicita "$S1" 10 bateria base)"
+L4B="$(solicita "$S2" 10 combustivel base)"
+L6="$(solicita "$S1" 10 mecanica_movel base)"
 
 aprova() { echo "SELECT aprovar_reajuste_taxa('$1', '$2', '[TESTE] conc: aprovação');"; }
 vigente() {  # vigente <serviço> <componente>: valor da regra nacional vigente agora
@@ -290,11 +294,16 @@ else
   falhou "2: $MOTIVO"
 fi
 
-echo "== Cenário 3: aprovações simultâneas de lotes DIFERENTES com escopo sobreposto"
-corrida safetycar_central "$(aprova "$P1" "$L3A")" safetycar_central "$(aprova "$P2" "$L3B")"
+# Desde a 0019 não há dois lotes em aberto com escopo sobreposto. O cenário 3 passou a ser:
+# a aprovação de L3A concorre com a SOLICITAÇÃO de L3B (sobreposto). L3B espera o advisory
+# lock e, como L3A já foi decidido, é aceito; depois é aprovado e calcula sobre o valor novo.
+echo "== Cenário 3: aprovação de um lote concorrendo com a solicitação de outro lote sobreposto"
+corrida safetycar_central "$(aprova "$P1" "$L3A")" safetycar_central "$(sol_sql "$S2" 5 pneu base)"
 if confere_sessoes ok; then
-  ok "as duas concluíram; a segunda esperou ($ESPERA_B), em série"
-  confere "a segunda recalculou sobre o valor já reajustado: base 10005 → 11006 (+10%, 0,5 sobe) → 11556 (+5%), e não 10505" \
+  ok "as duas concluíram; a solicitação esperou ($ESPERA_B) a aprovação, em série"
+  L3B="$(sql -c "SELECT id FROM reajuste_taxa WHERE solicitado_por = '$S2' AND servicos = '{pneu}' AND percentual_bp = 500")"
+  sql >/dev/null -c "SELECT aprovar_reajuste_taxa('$P2', '$L3B', '[TESTE] conc 3: aprovação de L3B')"
+  confere "L3B recalculou sobre o valor já reajustado: base 10005 → 11006 (+10%, 0,5 sobe) → 11556 (+5%), e não 10505" \
     "$(vigente pneu base) = 11556"
   confere "mínimo só com o primeiro lote: 5000 → 5500" "$(vigente pneu minimo) = 5500"
   confere "a base vigente veio de L3B e substituiu a regra criada por L3A" \
@@ -379,11 +388,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------------------------
-# 0017: definição da primeira tarifa em lote. U1 segue titular de conceder_permissao (7a/7b).
-sql >/dev/null <<SQL
-SELECT conceder_permissao('$U1', s::uuid, 'solicitar_reajuste_taxa', '[TESTE] conc: solicitante')
-  FROM unnest(ARRAY['$S1','$S2']) s;
-SQL
+# 0017: definição da primeira tarifa em lote (S1 e S2 já têm solicitar_reajuste_taxa).
 J8='[{"tipo_parceiro":"guincho","servico":"guincho_pesado","nacional":true,"componente":"base","valor":30000}]'
 J9='[{"tipo_parceiro":"guincho","servico":"guincho_pesado","nacional":true,"componente":"minimo","valor":8000}]'
 
@@ -453,6 +458,19 @@ if confere_sessoes SC024; then
      AND $LIMITE = 25"
 else
   falhou "11: $MOTIVO"
+fi
+
+# ---------------------------------------------------------------------------------------------
+# 0019: um lote de reajuste em aberto por escopo.
+echo "== Cenário 12: duas solicitações simultâneas de reajuste com escopo sobreposto"
+corrida safetycar_central "$(sol_sql "$S1" 5 pneu minimo)" safetycar_central "$(sol_sql "$S2" 7 pneu minimo)"
+if confere_sessoes SC024; then
+  ok "A solicitou; B esperou ($ESPERA_B) e terminou em SC024"
+  confere "um único lote em aberto para o mínimo do pneu, o de S1" \
+    "(SELECT count(*) FROM vw_reajuste_taxa WHERE situacao = 'solicitado' AND servicos = '{pneu}' AND componentes = '{minimo}') = 1
+     AND (SELECT solicitado_por = '$S1' FROM vw_reajuste_taxa WHERE situacao = 'solicitado' AND servicos = '{pneu}' AND componentes = '{minimo}')"
+else
+  falhou "12: $MOTIVO"
 fi
 
 # ---------------------------------------------------------------------------------------------

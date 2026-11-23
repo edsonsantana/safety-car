@@ -32,7 +32,7 @@ bash db/scripts/criar_papeis.sh --sincronizar  # alinha com o .env a senha dos p
 bash db/scripts/testar_senhas.sh  # à parte: testa os dois modos acima num contêiner descartável
 bash db/scripts/migrar.sh     # aplica as migrações pendentes no banco "safetycar"
 bash db/scripts/testar.sh     # recria "safetycar_teste" do zero, migra duas vezes e roda db/tests
-bash db/scripts/testar_concorrencia.sh  # à parte: duas sessões simultâneas em "safetycar_conc" (0014 a 0018)
+bash db/scripts/testar_concorrencia.sh  # à parte: duas sessões simultâneas em "safetycar_conc" (0014 a 0019)
 bash db/scripts/primeiro_administrador.sh --email … --sub … [--simular]  # uma vez por ambiente (ver 0014)
 bash db/scripts/testar_primeiro_administrador.sh  # à parte: testa o script acima em bancos descartáveis
 ```
@@ -94,6 +94,7 @@ Imagem fixada: `postgis/postgis:16-3.6`, digest `sha256:d07ce3f06f657b6516c75114
 | `0016_permissoes_central.sql` | `permissao_central.sensivel` e as permissões `solicitar_reajuste_taxa`, `analisar_cadastros` e `administrar_parametros`; regra do último titular de `conceder_permissao` (SC023) na revogação e na desativação; eventos `central_permissao_concedida`, `central_permissao_revogada` e `central_acesso`; `registrar_acesso_central()`; `vw_operador_permissao` e `vw_operador_central` |
 | `0017_regioes_definicao_taxa.sql` | `regiao` e `regiao_uf` (carga IBGE), `ufs_da_regiao()`; `definicao_taxa`, `definicao_taxa_item` e `definicao_taxa_decisao` (somente inserção), `vw_definicao_taxa`; `regra_taxa.definicao_id` e CHECKs de origem refeitos; funções da Central `simular_definicao_taxa` (por itens e por lote), `solicitar_`, `aprovar_`, `rejeitar_` e `cancelar_definicao_taxa` |
 | `0018_parametros.sql` | `parametro` (catálogo), `parametro_valor` (histórico com vigência), `parametro_alteracao` e `parametro_alteracao_decisao` (somente inserção), `vw_parametro_alteracao`, `vw_parametro_vigente`; `parametro_vigente()`; carga `limite_variacao_reajuste` = 20 e `alerta_documento_dias` = 30; funções da Central `alterar_parametro`, `solicitar_`, `aprovar_`, `rejeitar_` e `cancelar_alteracao_parametro` |
+| `0019_reajuste_percentual_limite.sql` | reajuste só percentual e com início imediato; `reajuste_taxa.regioes`, `motivo_excecao` e `limite_bp_na_criacao`; CHECKs `NOT VALID` para os lotes novos; SC025 (limite) e SC024 (lote em aberto sobreposto) no trigger; `percentual_para_bp()`, `reajuste_ufs_escopo()`, `reajuste_exigir_sem_lote_aberto()`; assinaturas antigas de simular, solicitar e aprovar removidas e recriadas; rejeitar recusa o solicitante; `ck_permissao_reajuste_sem_auto`; `vw_reajuste_taxa` recriada e `vw_reajuste_taxa_regra` |
 
 Privilégios do `safetycar_app` (0007):
 
@@ -124,6 +125,7 @@ Privilégios concedidos nas migrações seguintes (cada uma declara os seus):
 | `regiao`, `regiao_uf`, `definicao_taxa*`, `vw_definicao_taxa` e todas as funções da 0017 | **nenhum**; o app continua só lendo `regra_taxa`, inclusive `definicao_id` | 0017 |
 | `vw_parametro_vigente` | SELECT (chave, descrição, tipo, faixa, sensível, valor e início; sem operador nem motivo) | 0018 |
 | `parametro`, `parametro_valor`, `parametro_alteracao*`, `vw_parametro_alteracao` e todas as funções da 0018, inclusive `parametro_vigente` | **nenhum** | 0018 |
+| `vw_reajuste_taxa_regra` e todas as funções da 0019 | **nenhum** | 0019 |
 
 Privilégios do `safetycar_central` (0014):
 
@@ -140,9 +142,11 @@ Privilégios do `safetycar_central` (0014):
 | `simular_definicao_taxa` (as duas formas), `solicitar_definicao_taxa`, `aprovar_definicao_taxa`, `rejeitar_definicao_taxa`, `cancelar_definicao_taxa` (0017) | EXECUTE |
 | `parametro`, `parametro_valor`, `parametro_alteracao`, `parametro_alteracao_decisao`, `vw_parametro_alteracao`, `vw_parametro_vigente` (0018) | SELECT |
 | `parametro_vigente`, `alterar_parametro`, `solicitar_alteracao_parametro`, `aprovar_alteracao_parametro`, `rejeitar_alteracao_parametro`, `cancelar_alteracao_parametro` (0018) | EXECUTE |
+| `vw_reajuste_taxa` (recriada) e `vw_reajuste_taxa_regra` (0019) | SELECT |
+| `simular_reajuste_taxa` (nova assinatura, por percentual), `solicitar_reajuste_taxa` e `aprovar_reajuste_taxa` (novas assinaturas) (0019); `simular_reajuste_taxa(ator, lote)`, `rejeitar_` e `cancelar_reajuste_taxa` foram redefinidas mantendo o GRANT | EXECUTE |
 | demais tabelas (inclusive `usuario` e `auditoria`) | nenhum |
 
-As funções da 0016 redefinidas por `CREATE OR REPLACE` (`definir_operador_ativo`, `conceder_permissao`, `revogar_permissao`) mantêm a assinatura e os GRANTs da 0014. As auxiliares `existe_outro_titular_conceder` e `exige_outro_titular_conceder` (0016) e `ufs_da_regiao`, `definicao_itens`, `definicao_itens_json`, `definicao_calculo`, `definicao_exigir_aplicavel`, `definicao_exigir_sem_lote_aberto` e `exige_solicitar_ou_aprovar_taxa` (0017) e `parametro_validar_valor` e `parametro_trocar_valor` (0018) não têm GRANT para ninguém.
+As funções da 0016 redefinidas por `CREATE OR REPLACE` (`definir_operador_ativo`, `conceder_permissao`, `revogar_permissao`) mantêm a assinatura e os GRANTs da 0014. As auxiliares `existe_outro_titular_conceder` e `exige_outro_titular_conceder` (0016) e `ufs_da_regiao`, `definicao_itens`, `definicao_itens_json`, `definicao_calculo`, `definicao_exigir_aplicavel`, `definicao_exigir_sem_lote_aberto` e `exige_solicitar_ou_aprovar_taxa` (0017) e `parametro_validar_valor` e `parametro_trocar_valor` (0018) e `percentual_para_bp`, `reajuste_ufs_escopo` e `reajuste_exigir_sem_lote_aberto` (0019) não têm GRANT para ninguém.
 
 `conceder_permissao_inicial` e `revogar_permissao_manual` não têm GRANT: só o dono (`safetycar_migrator`) e o superusuário as executam. Todas as funções da 0014 e da 0015 que podem ser chamadas têm `REVOKE … FROM PUBLIC`. As auxiliares internas da 0015 (`arredondar_centavos`, `exige_operador_ativo`, `reajuste_validar`, `reajuste_calculo`, `reajuste_exigir_aplicavel`) não têm GRANT para ninguém: rodam dentro das funções da Central.
 
@@ -639,7 +643,7 @@ Fora desta fase: pagamento efetivo, pré-autorização real, repasse e integraç
 | codigo | text PK | ver a tabela abaixo. Extensível por migração (ex.: `aprovar_bloqueio`, `aprovar_nivel_manual`) |
 | nome, descricao | text | rótulo e explicação |
 | ativo | boolean | permissão inativa não vale para ninguém e não é concedida |
-| permite_autoaprovacao | boolean | exceção à regra "quem solicita não aprova o próprio pedido"; **desligada** em todas; CHECK: nunca ligada em `conceder_permissao` |
+| permite_autoaprovacao | boolean | exceção à regra "quem solicita não aprova o próprio pedido"; **desligada** em todas; CHECKs: nunca ligada em `conceder_permissao` (0014) nem em `aprovar_reajuste_taxa` (0019: sempre 1 aprovador diferente). As funções da 0017 a 0019 não consultam essa coluna |
 | sensivel | boolean (0016) | informativa para a API exigir OTP na sessão (o banco **não** valida 2FA); CHECK: sempre ligada em `conceder_permissao` |
 
 Catálogo (conciliado com o desenho de 23/11/2026; os códigos da 0014 foram mantidos):
@@ -648,7 +652,7 @@ Catálogo (conciliado com o desenho de 23/11/2026; os códigos da 0014 foram man
 |---|---|---|---|
 | `conceder_permissao` | administrar_permissoes | sim | cadastra, ativa e desativa operadores; concede e revoga permissões (0014). Rótulo "Administrar permissões" desde a 0016 |
 | `aprovar_reajuste_taxa` | aprovar_tarifa | sim | aprova e rejeita reajustes (0015) |
-| `solicitar_reajuste_taxa` | solicitar_tarifa | não | criada na 0016; **só passa a ser exigida na 0019**. Até lá, qualquer operador ativo solicita (0015) |
+| `solicitar_reajuste_taxa` | solicitar_tarifa | não | criada na 0016; exigida para pedir definição de tarifa (0017) e reajuste (0019); com ela ou com `aprovar_reajuste_taxa`, simula |
 | `analisar_cadastros` | igual | não | criada na 0016; **ainda não imposta pelo banco** (ver [pendências](#pendências-não-decididas)) |
 | `administrar_parametros` | igual | sim | criada na 0016; usada pelos parâmetros (0018) |
 
@@ -750,57 +754,77 @@ bash db/scripts/primeiro_administrador.sh --email admin@exemplo.invalid \
   - outro perfil, e-mail de outro `sub`, e-mail divergente e status não ativo: abortam;
   - reaproveitamento de um usuário central ativo.
 
-### Reajuste de taxas em lote (0015)
+### Reajuste de taxas em lote (0015, com as regras da 0019)
 
-Qualquer operador ativo da Central **solicita e simula**; quem tem a permissão `aprovar_reajuste_taxa` efetiva **aprova ou rejeita**. Nada entra em vigor sem aprovação.
+Quem tem `solicitar_reajuste_taxa` **solicita**. Quem tem `aprovar_reajuste_taxa` e **não fez o pedido** aprova ou rejeita. Simula quem tem uma das duas. Nada entra em vigor sem aprovação.
+
+**Desde a 0019** (desenho de 23/11/2026):
+- **Só percentual.** O tipo `valor` sai.
+- **Início imediato**, na hora da aprovação. O início agendado sai.
+- **Limite de variação.** O parâmetro `limite_variacao_reajuste` é copiado no pedido. Acima dele, o pedido exige motivo de exceção (SC025).
+- **Escopo sem sobreposição.** Não há dois lotes em aberto com escopo sobreposto (SC024).
+- **Sem autoaprovação.** Quem pede nunca aprova nem rejeita o próprio pedido.
+- **Assinaturas antigas removidas.** As de simular por parâmetros, solicitar e aprovar saíram com DROP.
+
+Um lote antigo ainda em aberto (tipo valor, início agendado ou sem limite copiado) não é aprovado: dá 22023, e o caminho é cancelar e pedir de novo.
 
 **reajuste_taxa**: o lote solicitado (somente inserção, SC010).
 
 | Coluna | Tipo | Finalidade | Pessoal |
 |---|---|---|---|
-| tipo | text CHECK | `percentual` ou `valor` | não |
-| percentual_bp | integer | só no `percentual`: de **−5000 a +5000 pb**, diferente de 0 | não |
-| valor_centavos | bigint | só no `valor`: diferente de 0 (positivo ou negativo); **só componentes em centavos** (nunca `por_km` nem pontos-base) | não |
+| tipo | text CHECK | `percentual`. Desde a 0019, CHECK `NOT VALID` e trigger recusam `valor` nos lotes novos | não |
+| percentual_bp | integer | de **−5000 a +5000 pb** (teto absoluto de ±50%), diferente de 0; informado em percentual com até 2 casas e convertido por `percentual_para_bp()` | não |
+| valor_centavos | bigint | só nos lotes anteriores à 0019 (tipo `valor`) | não |
 | tipos_parceiro, servicos | text[] | escopo; nulo = todos; cada código precisa existir | não |
-| ufs | text[] | nulo = todas as regras **estaduais**; senão, só as regras daquelas UFs | não |
+| ufs | text[] | nulo = todas as regras **estaduais**; senão, só as regras daquelas UFs. Já inclui as UFs das regiões | não |
+| regioes | text[] (0019) | atalho de escopo informado; as UFs da região entram em `ufs` | não |
 | inclui_nacional | boolean | a regra **nacional** (`uf` nula) só entra com `true`; ela vale para todas as UFs sem regra própria | não |
 | componentes | text[] | não vazio; dentro dos 6 componentes | não |
 | inclui_pontos_base | boolean | regras em pontos-base (comissão e cancelamento percentual) só entram com `true`; a comissão só pode ser listada com `true` | não |
 | motivo | text | obrigatório | pode conter |
+| motivo_excecao | text (0019) | obrigatório quando `abs(percentual_bp)` passa do limite copiado; em branco vale como ausente | pode conter |
+| limite_bp_na_criacao | integer (0019) | cópia do parâmetro `limite_variacao_reajuste` no pedido, em pb, preenchida pelo trigger (o enviado é ignorado) | não |
 | indice_referencia | text | opcional, texto livre (ex.: "IPCA out/2026"); não há busca automática | não |
-| inicio_solicitado | timestamptz | nulo = no momento da aprovação | não |
-| solicitado_por, solicitado_em, papel_bd | uuid FK, timestamptz, text | operador ativo; hora do servidor; `session_user` | sim |
+| inicio_solicitado | timestamptz | só nos lotes anteriores à 0019; nos novos, sempre nulo | não |
+| solicitado_por, solicitado_em, papel_bd | uuid FK, timestamptz, text | operador com `solicitar_reajuste_taxa`; hora do servidor; `session_user` | sim |
 
-**reajuste_taxa_decisao** (somente inserção, uma por lote: UNIQUE `reajuste_id`): `situacao` (`aprovado`, `rejeitado` ou `cancelado`), `decidido_por`, `decidido_em` (hora do servidor), `motivo` (obrigatório), `papel_bd`; só na aprovação: `inicio_efetivo`, `regras_afetadas` e `autoaprovacao`.
+**reajuste_taxa_decisao** (somente inserção, uma por lote: UNIQUE `reajuste_id`): `situacao` (`aprovado`, `rejeitado` ou `cancelado`), `decidido_por`, `decidido_em` (hora do servidor), `motivo` (obrigatório), `papel_bd`; só na aprovação: `inicio_efetivo`, `regras_afetadas` e `autoaprovacao` (sempre `false` desde a 0019).
 
-**vw_reajuste_taxa** (`security_invoker`): o lote mais a decisão, com `situacao` derivada (`solicitado` enquanto não houver decisão).
+**vw_reajuste_taxa** (`security_invoker`; recriada na 0019 para incluir as colunas novas): o lote mais a decisão, com `situacao` derivada (`solicitado` enquanto não houver decisão).
 
-**Escopo de um lote**: regras vigentes no instante da aprovação, de tipo e serviço do escopo, cuja UF está em `ufs` (ou que são nacionais, com `inclui_nacional`), de um componente listado, e em pontos-base só com `inclui_pontos_base`. Um reajuste de "SP" só altera as regras **da UF SP**; não cria regra de SP a partir da nacional. Regras anuladas (intervalo vazio) não entram.
+**vw_reajuste_taxa_regra** (`security_invoker`, 0019): uma linha por regra criada por reajuste, com `valor_base` (da regra substituída), `valor_novo` e `inicio_vigencia`.
+
+**Escopo de um lote**: regras vigentes no instante, de tipo e serviço do escopo, cuja UF está em `ufs` (ou que são nacionais, com `inclui_nacional`), de um componente listado, e em pontos-base só com `inclui_pontos_base`. Um reajuste de "SP" só altera as regras **da UF SP**; não cria regra de SP a partir da nacional. Regras anuladas (intervalo vazio) não entram. Dois escopos se **sobrepõem** quando têm pelo menos uma regra vigente em comum (SC024).
 
 **Funções da Central** (SECURITY DEFINER, EXECUTE só para o `safetycar_central`; ator verificado, auditado e restaurado ao fim):
 
 | Função | Quem | O que faz |
 |---|---|---|
-| `simular_reajuste_taxa(ator, …parâmetros, inicio)` e `simular_reajuste_taxa(ator, reajuste_id)` | operador ativo | só leitura: uma linha por regra do escopo com valor atual, valor novo, `abrangencia` (a nacional aparece como "nacional: vale para todas as UFs sem regra própria") e `problema` (`a_definir`, `regra_futura`, `termina_antes_do_inicio`, `negativo`, `zeraria`, `acima_10000_pb`, `sem_alteracao`) |
-| `solicitar_reajuste_taxa(ator, …, motivo, indice, inicio)` | operador ativo | grava o lote **sem tocar em nenhuma regra**; já recusa o que a aprovação recusaria |
-| `aprovar_reajuste_taxa(ator, reajuste_id, motivo, inicio)` | `aprovar_reajuste_taxa`, e não o solicitante | ver abaixo; devolve quantas regras ganharam nova versão |
-| `rejeitar_reajuste_taxa(ator, reajuste_id, motivo)` | `aprovar_reajuste_taxa` | só grava a decisão |
+| `simular_reajuste_taxa(ator, percentual, tipos, servicos, ufs, regioes, inclui_nacional, componentes, inclui_pontos_base)` e `simular_reajuste_taxa(ator, reajuste_id)` | `solicitar_reajuste_taxa` ou `aprovar_reajuste_taxa` | só leitura: uma linha por regra do escopo com valor atual, valor novo, `abrangencia` (a nacional aparece como "nacional: vale para todas as UFs sem regra própria") e `problema` (`a_definir`, `regra_futura`, `acima_10000_pb`, `sem_alteracao`; `negativo` e `zeraria` não ocorrem mais, ver abaixo) |
+| `solicitar_reajuste_taxa(ator, percentual, tipos, servicos, ufs, regioes, inclui_nacional, componentes, inclui_pontos_base, motivo, motivo_excecao, indice)` | `solicitar_reajuste_taxa` | grava o lote **sem tocar em nenhuma regra**; já recusa o que a aprovação recusaria; o trigger copia o limite, exige a exceção (SC025) e recusa sobreposição (SC024) |
+| `aprovar_reajuste_taxa(ator, reajuste_id, motivo)` | `aprovar_reajuste_taxa`, **nunca o solicitante** (SC017) | ver abaixo; devolve quantas regras ganharam nova versão |
+| `rejeitar_reajuste_taxa(ator, reajuste_id, motivo)` | `aprovar_reajuste_taxa`, nunca o solicitante (SC017, desde a 0019) | só grava a decisão |
 | `cancelar_reajuste_taxa(ator, reajuste_id, motivo)` | o próprio solicitante (ativo) ou quem tem `aprovar_reajuste_taxa` | só grava a decisão |
 
 **Aprovação**, numa só transação. Todas as checagens vêm antes de qualquer escrita, então não há reajuste parcial:
-1. `pg_advisory_xact_lock(150001)` serializa as aprovações de reajuste de taxa. Depois, `FOR UPDATE` no lote (já decidido: SC020).
-2. Se quem aprova é quem solicitou e `permite_autoaprovacao` está desligada: SC017.
-3. `FOR UPDATE` nas regras do escopo, em ordem de id. Só **depois dos locks** o relógio é lido (`clock_timestamp()`). O início padrão e a checagem de "início no passado" (SC012) usam esse mesmo relógio, nunca `now()`.
+1. `pg_advisory_xact_lock(150001)` serializa as alterações de `regra_taxa` pela Central (reajuste, definição e solicitações). Depois, `FOR UPDATE` no lote (já decidido: SC020; anterior à 0019: 22023).
+2. Se quem aprova é quem solicitou: SC017, sempre. O CHECK `ck_permissao_reajuste_sem_auto` impede ligar `permite_autoaprovacao` em `aprovar_reajuste_taxa`.
+3. `FOR UPDATE` nas regras do escopo, em ordem de id. Só **depois dos locks** o relógio é lido (`clock_timestamp()`), e esse instante é o início, nunca no passado.
 4. Checagens:
    - escopo vazio: SC019;
    - regra `a_definir`: SC013;
-   - regra futura agendada no escopo, ou vigente que termina em ou antes do início: SC021;
-   - resultado negativo, zerado a partir de um valor maior que zero, ou acima de 10000 pb: SC022;
+   - regra futura agendada no escopo: SC021;
+   - resultado acima de 10000 pb: SC022;
    - **nenhuma regra muda de valor: SC022 ("nada a alterar")**.
+   O limite **não** é conferido de novo: vale o copiado no pedido, mesmo que o parâmetro tenha mudado depois.
 5. Para cada regra: `fim_vigencia = início` na antiga e uma nova linha `definido` com `inicio_vigencia = início`, o mesmo escopo, a mesma unidade e `base_distancia`, `fim_vigencia` igual ao fim da antiga, `reajuste_id` e `regra_origem_id`. Antiga e nova ficam contíguas, sem sobreposição. **Uma regra cujo valor fica igual também ganha a nova versão.**
-6. Grava a decisão com `inicio_efetivo`, `regras_afetadas` e `autoaprovacao`.
+6. Grava a decisão com `inicio_efetivo` e `regras_afetadas`.
 
-**Arredondamento**: `arredondar_centavos(x) = floor(x + 0,5)`, só com `numeric`. Fração de 0,5 ou mais sobe; menor que 0,5 desce. Exemplos: 1,5 → 2; 1,49 → 1; 2,5 → 3; 0,5 → 1. No percentual, `valor_novo = arredondar_centavos(valor × (10000 + pb) / 10000)`, **uma única vez, sobre o valor final**, sem arredondar o fator nem passos intermediários. Como o valor de partida é sempre inteiro em centavos, arredondar o valor final ou a diferença dá o mesmo resultado; a garantia de "uma vez só" está na forma do código, e não num teste que distinga os dois.
+**Por que `negativo` e `zeraria` não ocorrem mais**: só há percentual, de −50% a +50%. O menor resultado de um valor positivo `x` é `arredondar_centavos(x / 2)`, que é ≥ 1 para `x ≥ 1`; por exemplo, 1 centavo − 50% = 0,5, que vira 1. As checagens continuam no código para os lotes antigos.
+
+**Auditoria**: as linhas automáticas mais os eventos `central_reajuste_solicitado` (percentual, limite copiado, `acima_do_limite`, motivo e motivo de exceção), `central_reajuste_aprovado`, `central_reajuste_rejeitado` e `central_reajuste_cancelado`. Se a auditoria falhar, nada é gravado (há teste).
+
+**Arredondamento**: `arredondar_centavos(x) = floor(x + 0,5)`, só com `numeric`. Fração de 0,5 ou mais sobe; menor que 0,5 desce. Exemplos: 1,5 → 2; 1,49 → 1; 2,5 → 3; 0,5 → 1. No fluxo real (teste 18): R$ 100,05 + 10% = R$ 110,06 (110,055 sobe); R$ 100,04 + 10% = R$ 110,04 (110,044 desce); R$ 100,05 − 10% = R$ 90,05 (90,045 sobe). É a fórmula do desenho, `round(valor_base × (1 + percentual/100), 2)` em reais, feita em centavos inteiros: para valores positivos, o resultado é o mesmo. No percentual, `valor_novo = arredondar_centavos(valor × (10000 + pb) / 10000)`, **uma única vez, sobre o valor final**, sem arredondar o fator nem passos intermediários. Como o valor de partida é sempre inteiro em centavos, arredondar o valor final ou a diferença dá o mesmo resultado; a garantia de "uma vez só" está na forma do código, e não num teste que distinga os dois.
 
 **Direito adquirido**: o reajuste nunca apaga nem altera a regra antiga além do fim da vigência. Ela continua consultável **por data**, com `regra_taxa_vigente(…, instante)` (antes do início devolve a antiga; a partir dele, a nova), e **por id**. Quando o chamado existir (fase seguinte), ele guardará o `regra_taxa.id` de cada componente e os valores usados na hora do pedido; um chamado em andamento mantém o preço da hora do pedido.
 
@@ -951,7 +975,9 @@ As regras ficam no banco para valer para qualquer cliente que venha a existir. E
 | SC027 | caminho errado: parâmetro sensível alterado direto, ou parâmetro comum por pedido (0018) | `parametro_valor_validar()`, `parametro_alteracao_preparar()`, `alterar_parametro()`, `solicitar_alteracao_parametro()` |
 | SC028 | definição de regra que já está definida (o caminho é o reajuste) (0017) | `definicao_exigir_aplicavel()` |
 | SC016, SC017, SC020, SC021 | também na definição (0017): ator sem permissão; decidir o próprio lote; lote já decidido; regra futura agendada no escopo | funções da 0017 |
-| SC016, SC017, SC012, SC013 | também no reajuste: ator sem permissão ou operador inativo; autoaprovação desligada; início no passado; regra "a definir" no escopo | funções da 0015 |
+| SC016, SC017, SC013 | também no reajuste: ator sem permissão ou operador inativo; decidir o próprio pedido (aprovar ou, desde a 0019, rejeitar); regra "a definir" no escopo | funções da 0015 e da 0019 |
+| SC024 | também (0019): lote de reajuste com regra vigente em comum com outro lote ainda sem decisão | `reajuste_exigir_sem_lote_aberto()`, chamada por `reajuste_taxa_preparar()` |
+| SC025 | percentual do reajuste acima do limite copiado no pedido, sem `motivo_excecao` (0019) | `reajuste_taxa_preparar()` |
 | 22023 | parâmetro inválido em `parceiros_proximos` (lat, lng, raio, serviço) | `parceiros_proximos()` |
 
 Notas:
@@ -1048,13 +1074,14 @@ Em relação ao `safety_car_modelo_dados_v1.sql`:
     2. `SELECT conceder_permissao_inicial('<novo detentor>', '<motivo>');`
 - **Ator restaurado ao fim das funções** (decidido, 0014). As funções de ação gravam o ator com `set_config(…, true)` e restauram o valor anterior no fim. Uma chamada aninhada não apaga o ator da chamada de fora (há teste).
 - **Reajuste de taxas em lote** (decidido, 0015). Em pico de inflação, reajustar só por migração é lento demais.
-  - Qualquer operador ativo solicita e simula; aprova quem tem `aprovar_reajuste_taxa`, e não um "administrador" fixo.
-  - **Autoaprovação desligada**: quem solicita não aprova o próprio pedido (`permite_autoaprovacao` só muda por migração).
-  - **Faixa de ±5000 pb** por lote, como proteção contra erro de digitação.
-  - **Por km só no percentual**: o tipo `valor` só aceita componentes em centavos.
+  - Solicita quem tem `solicitar_reajuste_taxa` (desde a 0019; na 0015 era qualquer operador ativo); aprova quem tem `aprovar_reajuste_taxa`, e não um "administrador" fixo.
+  - **Sem autoaprovação**: quem solicita não aprova nem rejeita o próprio pedido. Desde a 0019 não há exceção (CHECK `ck_permissao_reajuste_sem_auto`).
+  - **Faixa de ±5000 pb** por lote (teto absoluto de ±50%), como proteção contra erro de digitação. Abaixo do teto, vale o **limite de variação** do parâmetro (0018), copiado no pedido; acima dele, exige motivo de exceção (SC025, 0019).
+  - **Só percentual** (0019, desenho de 23/11/2026). O tipo `valor` da 0015 saiu.
+  - **Um lote em aberto por escopo** (0019): dois lotes sem decisão não têm regra vigente em comum (SC024).
   - **Pontos-base só com pedido explícito** (`inclui_pontos_base`).
   - **Escopo por UF**: só as regras daquela UF; a **nacional só com `inclui_nacional`**, e ela vale para todas as UFs sem regra própria.
-  - **Início** na hora da aprovação ou em data futura, nunca no passado. É lido com `clock_timestamp()` **depois dos locks**.
+  - **Início imediato**, na hora da aprovação, nunca no passado (desde a 0019; a data futura da 0015 saiu). É lido com `clock_timestamp()` **depois dos locks**.
   - **Locks**: `pg_advisory_xact_lock(150001)` serializa as aprovações e garante que a segunda leia o escopo já atualizado; depois vem `FOR UPDATE` nas regras.
   - **Valor igual entra como nova versão**, mas um lote em que **nenhuma** regra muda é recusado (SC022).
   - **Sem reajuste parcial**: todas as checagens vêm antes de qualquer escrita, numa só transação.
@@ -1103,7 +1130,7 @@ Registradas aqui; nenhuma foi decidida nesta fase.
 17. ~~Teste de concorrência com duas sessões.~~ **Resolvida pelo `db/scripts/testar_concorrencia.sh`** (2026-11-20), fora da suíte padrão. Todos os cenários passaram **sem defeito nas migrações** e nenhuma migração nova foi necessária. Em todos, B ficou de fato bloqueada esperando lock:
     1. Duas concessões iniciais simultâneas de `conceder_permissao`, com usuários diferentes e com o mesmo usuário (depois da recuperação manual): uma conclui e a outra termina em SC018, nunca em 40P01. Sobra uma concessão vigente (0014).
     2. Duas aprovações simultâneas do mesmo lote: a segunda espera o advisory lock e termina em SC020. Há uma decisão só e uma versão nova só.
-    3. Duas aprovações simultâneas de lotes diferentes com escopo sobreposto: são serializadas, e a segunda **recalcula sobre o valor já reajustado** (10005 → 11006 → 11556, e não 10505). Não houve reajuste parcial e as vigências ficaram contíguas.
+    3. Desde a 0019, dois lotes sobrepostos não ficam em aberto juntos, então o cenário passou a ser este: a aprovação de um lote concorre com a solicitação de outro lote sobreposto. A solicitação espera o advisory lock e é aceita, porque o primeiro lote já foi decidido. Aprovada em seguida, **recalcula sobre o valor já reajustado** (10005 → 11006 → 11556, e não 10505). Não houve reajuste parcial e as vigências ficaram contíguas.
     4. Duas aprovações simultâneas de lotes com escopos disjuntos: as duas concluem. A segunda também espera, porque o advisory lock 150001 é global e serializa toda aprovação de reajuste, por desenho.
     5. Duas concessões simultâneas da mesma permissão ao mesmo operador, por dois detentores de `conceder_permissao`: a segunda espera o `FOR UPDATE` no operador e termina em SC018.
     6. Uma regra "a definir" entra no escopo, por uma sessão do migrator segurando o advisory lock, enquanto a aprovação espera: a aprovação termina em SC013, nenhuma regra é alterada e o lote continua `solicitado`.
@@ -1113,6 +1140,9 @@ Registradas aqui; nenhuma foi decidida nesta fase.
     9. (0017) Duas solicitações simultâneas de definição no mesmo escopo: a segunda espera o advisory lock e termina em SC024. Sobra um lote só.
     10. (0018) Duas aprovações simultâneas do mesmo pedido de parâmetro sensível: a segunda espera o lock do pedido e termina em SC020. Há um valor novo só e um só valor em aberto, contíguo ao anterior.
     11. (0018) Dois pedidos simultâneos para o mesmo parâmetro sensível: o segundo espera o lock do parâmetro e termina em SC024.
+    12. (0019) Duas solicitações simultâneas de reajuste com escopo sobreposto: a segunda espera o advisory lock e termina em SC024. Sobra um lote só em aberto.
+
+    Na 0019, os cenários 2 a 6 passaram a usar a assinatura nova (percentual) e solicitantes com `solicitar_reajuste_taxa`.
 
     No fim, o script confere que não há vigência sobreposta em `regra_taxa`, `politica_garantia` nem `parametro_valor`.
 18. **`analisar_cadastros` ainda não é imposta pelo banco** (0016). A aprovação de parceiro (`parceiro.aprovado_por`) e a revisão de documento (`parceiro_documento.revisado_por`) são feitas pelo app por DML, e o banco só exige perfil `central` (SC001). A permissão vale apenas na API da Central até essas ações virarem funções do `safetycar_central`, numa migração futura.

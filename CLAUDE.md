@@ -30,7 +30,7 @@ Plataforma de assistência rodoviária conectada (guincho, mecânica e serviços
   - Primeiro administrador: `bash db/scripts/primeiro_administrador.sh --email … --sub …` (`--simular` antes; grava só se for digitado o nome do banco). Roda **uma vez por ambiente** (trabalho, casa), cada um com o `keycloak_sub` do seu próprio Keycloak. Teste: `bash db/scripts/testar_primeiro_administrador.sh` (bancos descartáveis). Ainda não foi rodado no `safetycar`.
 - **Reajuste de taxas em lote** (migração `0015`, testes `18` e `19`):
   - `reajuste_taxa` (lote) e `reajuste_taxa_decisao`, ambos somente de inserção; `regra_taxa` ganhou `reajuste_id` e `regra_origem_id`. Funções da Central: simular, solicitar, aprovar, rejeitar e cancelar.
-  - Qualquer operador ativo solicita e simula. Aprova quem tem `aprovar_reajuste_taxa`, nunca o próprio solicitante (autoaprovação desligada).
+  - **Regras atualizadas pela 0019** (ver abaixo): só percentual, início imediato, limite de variação, `solicitar_reajuste_taxa` para pedir. Aprova quem tem `aprovar_reajuste_taxa`, nunca o próprio solicitante.
   - A aprovação calcula sobre as regras vigentes naquele momento e, numa só transação, encerra as antigas e cria as novas no mesmo instante. Não há reajuste parcial.
   - Locks: `pg_advisory_xact_lock(150001)` e depois `FOR UPDATE`. O início é lido com `clock_timestamp()` depois dos locks, nunca no passado.
   - Faixa de ±5000 pb; por km só no percentual; pontos-base só com `inclui_pontos_base`; a regra nacional só com `inclui_nacional` (vale para todas as UFs).
@@ -52,6 +52,11 @@ Plataforma de assistência rodoviária conectada (guincho, mecânica e serviços
   - `parametro` (catálogo, só por migração: tipo `percentual` ou `dias`, faixa, sensível) e `parametro_valor` (histórico com vigência imutável, sem sobreposição, um valor em aberto). Carga: `limite_variacao_reajuste` = 20 (1 a 50, sensível; CHECK impede máximo acima do teto de 50%) e `alerta_documento_dias` = 30 (1 a 180, comum).
   - Comum: `alterar_parametro` direto, com `administrar_parametros`. Sensível: pedido de quem tem `administrar_parametros` e decisão de outro operador com a mesma permissão; um pedido em aberto por parâmetro (SC024). Fora da faixa ou do tipo: SC026; caminho errado: SC027; valor igual ao vigente é recusado.
   - Sem valor: SC013 em `parametro_vigente`. O app só lê `vw_parametro_vigente` (sem operador nem motivo).
+- **Reajuste conforme o desenho** (migração `0019`, testes `18` e `19` reescritos, cenários de concorrência 2 a 6 adaptados e 12):
+  - Só **percentual** (até 2 casas, ±50% de teto absoluto); início **imediato** na aprovação. O tipo "valor" e o início agendado saíram; as assinaturas antigas de simular, solicitar e aprovar foram removidas (DROP).
+  - Limite de variação: o parâmetro `limite_variacao_reajuste` é **copiado no pedido** (`limite_bp_na_criacao`); acima dele, exige `motivo_excecao` (SC025). A aprovação usa o limite copiado, não o de agora.
+  - Solicitar exige `solicitar_reajuste_taxa`; simular, ela ou `aprovar_reajuste_taxa`. Quem pede nunca aprova nem rejeita (sem exceção de autoaprovação; CHECK no catálogo).
+  - Sem dois lotes em aberto com regra vigente em comum (SC024). Região como atalho de escopo (`regioes`). `vw_reajuste_taxa_regra` mostra valor base e valor novo.
 - **Keycloak de desenvolvimento** no `docker-compose.yml` (26.8.2, `start-dev`, só em 127.0.0.1), com banco próprio (`keycloak-db`). O realm `safetycar-dev` é versionado em `keycloak/realms/safetycar-dev.json`, **sem usuários, senhas nem segredos**. O client `safetycar-web` é público, com PKCE S256 e `aud=safetycar-api`. Detalhes em `docs/KEYCLOAK.md`.
 - **Esqueleto do backend** em `apps/api` (Node 24 + TypeScript estrito; Fastify, `pg`, Zod, `jose` e pino-pretty em dev; testes com `node:test`). Rotas: `GET /saude` (SELECT 1) e `GET /me` (ver Login abaixo).
   - Conecta só como `safetycar_app`: a configuração recusa `safetycar_migrator` e `postgres`, e a subida recusa papel superusuário ou com CREATE no schema `public`.
@@ -75,7 +80,7 @@ bash db/scripts/criar_papeis.sh --sincronizar       # ALTER ROLE só nos papéis
 bash db/scripts/testar_senhas.sh                    # à parte: testa os dois modos num contêiner descartável, removido no fim
 bash db/scripts/migrar.sh                           # migrações no banco safetycar
 bash db/scripts/testar.sh                           # testes do banco (recria safetycar_teste)
-bash db/scripts/testar_concorrencia.sh              # à parte: duas sessões simultâneas (0014 a 0018) em safetycar_conc, apagado no fim
+bash db/scripts/testar_concorrencia.sh              # à parte: duas sessões simultâneas (0014 a 0019) em safetycar_conc, apagado no fim
 bash db/scripts/primeiro_administrador.sh --email … --sub … [--simular]  # 1º administrador da Central, uma vez por ambiente
 bash db/scripts/testar_primeiro_administrador.sh    # à parte: testa o script acima em bancos descartáveis, apagados no fim
 node --test keycloak/tests/tema.test.mjs            # estrutura e contraste do tema de login
