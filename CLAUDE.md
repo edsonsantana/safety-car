@@ -48,6 +48,10 @@ Plataforma de assistência rodoviária conectada (guincho, mecânica e serviços
   - Primeira tarifa por **lote de definição** (itens em jsonb, cada um com exatamente um alvo: `uf`, `regiao` ou `nacional: true`). Pede quem tem `solicitar_reajuste_taxa`; aprova ou rejeita, numa só decisão, quem tem `aprovar_reajuste_taxa` e não é o solicitante. Simula quem tem uma das duas.
   - Regra "a definir" é encerrada e substituída; escopo sem regra ganha regra nova; regra já definida recusa (SC028, use o reajuste); outro lote em aberto no mesmo escopo recusa (SC024). Valor 0 é aceito como definido. Combinação tipo × serviço nova só por migração.
   - Mesmo advisory lock do reajuste (150001) na solicitação e na aprovação.
+- **Parâmetros de negócio** (migração `0018`, testes `22`, cenários 10 e 11 de concorrência):
+  - `parametro` (catálogo, só por migração: tipo `percentual` ou `dias`, faixa, sensível) e `parametro_valor` (histórico com vigência imutável, sem sobreposição, um valor em aberto). Carga: `limite_variacao_reajuste` = 20 (1 a 50, sensível; CHECK impede máximo acima do teto de 50%) e `alerta_documento_dias` = 30 (1 a 180, comum).
+  - Comum: `alterar_parametro` direto, com `administrar_parametros`. Sensível: pedido de quem tem `administrar_parametros` e decisão de outro operador com a mesma permissão; um pedido em aberto por parâmetro (SC024). Fora da faixa ou do tipo: SC026; caminho errado: SC027; valor igual ao vigente é recusado.
+  - Sem valor: SC013 em `parametro_vigente`. O app só lê `vw_parametro_vigente` (sem operador nem motivo).
 - **Keycloak de desenvolvimento** no `docker-compose.yml` (26.8.2, `start-dev`, só em 127.0.0.1), com banco próprio (`keycloak-db`). O realm `safetycar-dev` é versionado em `keycloak/realms/safetycar-dev.json`, **sem usuários, senhas nem segredos**. O client `safetycar-web` é público, com PKCE S256 e `aud=safetycar-api`. Detalhes em `docs/KEYCLOAK.md`.
 - **Esqueleto do backend** em `apps/api` (Node 24 + TypeScript estrito; Fastify, `pg`, Zod, `jose` e pino-pretty em dev; testes com `node:test`). Rotas: `GET /saude` (SELECT 1) e `GET /me` (ver Login abaixo).
   - Conecta só como `safetycar_app`: a configuração recusa `safetycar_migrator` e `postgres`, e a subida recusa papel superusuário ou com CREATE no schema `public`.
@@ -71,7 +75,7 @@ bash db/scripts/criar_papeis.sh --sincronizar       # ALTER ROLE só nos papéis
 bash db/scripts/testar_senhas.sh                    # à parte: testa os dois modos num contêiner descartável, removido no fim
 bash db/scripts/migrar.sh                           # migrações no banco safetycar
 bash db/scripts/testar.sh                           # testes do banco (recria safetycar_teste)
-bash db/scripts/testar_concorrencia.sh              # à parte: duas sessões simultâneas (0014 a 0017) em safetycar_conc, apagado no fim
+bash db/scripts/testar_concorrencia.sh              # à parte: duas sessões simultâneas (0014 a 0018) em safetycar_conc, apagado no fim
 bash db/scripts/primeiro_administrador.sh --email … --sub … [--simular]  # 1º administrador da Central, uma vez por ambiente
 bash db/scripts/testar_primeiro_administrador.sh    # à parte: testa o script acima em bancos descartáveis, apagados no fim
 node --test keycloak/tests/tema.test.mjs            # estrutura e contraste do tema de login

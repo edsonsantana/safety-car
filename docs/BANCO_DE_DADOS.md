@@ -32,7 +32,7 @@ bash db/scripts/criar_papeis.sh --sincronizar  # alinha com o .env a senha dos p
 bash db/scripts/testar_senhas.sh  # à parte: testa os dois modos acima num contêiner descartável
 bash db/scripts/migrar.sh     # aplica as migrações pendentes no banco "safetycar"
 bash db/scripts/testar.sh     # recria "safetycar_teste" do zero, migra duas vezes e roda db/tests
-bash db/scripts/testar_concorrencia.sh  # à parte: duas sessões simultâneas em "safetycar_conc" (0014 a 0017)
+bash db/scripts/testar_concorrencia.sh  # à parte: duas sessões simultâneas em "safetycar_conc" (0014 a 0018)
 bash db/scripts/primeiro_administrador.sh --email … --sub … [--simular]  # uma vez por ambiente (ver 0014)
 bash db/scripts/testar_primeiro_administrador.sh  # à parte: testa o script acima em bancos descartáveis
 ```
@@ -93,6 +93,7 @@ Imagem fixada: `postgis/postgis:16-3.6`, digest `sha256:d07ce3f06f657b6516c75114
 | `0015_reajuste_taxa.sql` | `reajuste_taxa` (lote) e `reajuste_taxa_decisao` (somente inserção), `vw_reajuste_taxa`; `regra_taxa.reajuste_id` e `regra_taxa.regra_origem_id`; `arredondar_centavos()`, `reajuste_calculo()`; funções da Central `simular_reajuste_taxa` (por parâmetros e por lote), `solicitar_reajuste_taxa`, `aprovar_reajuste_taxa`, `rejeitar_reajuste_taxa`, `cancelar_reajuste_taxa` |
 | `0016_permissoes_central.sql` | `permissao_central.sensivel` e as permissões `solicitar_reajuste_taxa`, `analisar_cadastros` e `administrar_parametros`; regra do último titular de `conceder_permissao` (SC023) na revogação e na desativação; eventos `central_permissao_concedida`, `central_permissao_revogada` e `central_acesso`; `registrar_acesso_central()`; `vw_operador_permissao` e `vw_operador_central` |
 | `0017_regioes_definicao_taxa.sql` | `regiao` e `regiao_uf` (carga IBGE), `ufs_da_regiao()`; `definicao_taxa`, `definicao_taxa_item` e `definicao_taxa_decisao` (somente inserção), `vw_definicao_taxa`; `regra_taxa.definicao_id` e CHECKs de origem refeitos; funções da Central `simular_definicao_taxa` (por itens e por lote), `solicitar_`, `aprovar_`, `rejeitar_` e `cancelar_definicao_taxa` |
+| `0018_parametros.sql` | `parametro` (catálogo), `parametro_valor` (histórico com vigência), `parametro_alteracao` e `parametro_alteracao_decisao` (somente inserção), `vw_parametro_alteracao`, `vw_parametro_vigente`; `parametro_vigente()`; carga `limite_variacao_reajuste` = 20 e `alerta_documento_dias` = 30; funções da Central `alterar_parametro`, `solicitar_`, `aprovar_`, `rejeitar_` e `cancelar_alteracao_parametro` |
 
 Privilégios do `safetycar_app` (0007):
 
@@ -121,6 +122,8 @@ Privilégios concedidos nas migrações seguintes (cada uma declara os seus):
 | `reajuste_taxa`, `reajuste_taxa_decisao`, `vw_reajuste_taxa` e todas as funções da 0015 | **nenhum**: os lotes identificam operadores; o app continua só lendo `regra_taxa`, inclusive as colunas novas | 0015 |
 | `vw_operador_permissao`, `vw_operador_central` e todas as funções da 0016 | **nenhum**; o app continua lendo só `permissao_central` (agora com `sensivel`) | 0016 |
 | `regiao`, `regiao_uf`, `definicao_taxa*`, `vw_definicao_taxa` e todas as funções da 0017 | **nenhum**; o app continua só lendo `regra_taxa`, inclusive `definicao_id` | 0017 |
+| `vw_parametro_vigente` | SELECT (chave, descrição, tipo, faixa, sensível, valor e início; sem operador nem motivo) | 0018 |
+| `parametro`, `parametro_valor`, `parametro_alteracao*`, `vw_parametro_alteracao` e todas as funções da 0018, inclusive `parametro_vigente` | **nenhum** | 0018 |
 
 Privilégios do `safetycar_central` (0014):
 
@@ -135,9 +138,11 @@ Privilégios do `safetycar_central` (0014):
 | `registrar_acesso_central` (0016) | EXECUTE |
 | `regiao`, `regiao_uf`, `definicao_taxa`, `definicao_taxa_item`, `definicao_taxa_decisao`, `vw_definicao_taxa` (0017) | SELECT |
 | `simular_definicao_taxa` (as duas formas), `solicitar_definicao_taxa`, `aprovar_definicao_taxa`, `rejeitar_definicao_taxa`, `cancelar_definicao_taxa` (0017) | EXECUTE |
+| `parametro`, `parametro_valor`, `parametro_alteracao`, `parametro_alteracao_decisao`, `vw_parametro_alteracao`, `vw_parametro_vigente` (0018) | SELECT |
+| `parametro_vigente`, `alterar_parametro`, `solicitar_alteracao_parametro`, `aprovar_alteracao_parametro`, `rejeitar_alteracao_parametro`, `cancelar_alteracao_parametro` (0018) | EXECUTE |
 | demais tabelas (inclusive `usuario` e `auditoria`) | nenhum |
 
-As funções da 0016 redefinidas por `CREATE OR REPLACE` (`definir_operador_ativo`, `conceder_permissao`, `revogar_permissao`) mantêm a assinatura e os GRANTs da 0014. As auxiliares `existe_outro_titular_conceder` e `exige_outro_titular_conceder` (0016) e `ufs_da_regiao`, `definicao_itens`, `definicao_itens_json`, `definicao_calculo`, `definicao_exigir_aplicavel`, `definicao_exigir_sem_lote_aberto` e `exige_solicitar_ou_aprovar_taxa` (0017) não têm GRANT para ninguém.
+As funções da 0016 redefinidas por `CREATE OR REPLACE` (`definir_operador_ativo`, `conceder_permissao`, `revogar_permissao`) mantêm a assinatura e os GRANTs da 0014. As auxiliares `existe_outro_titular_conceder` e `exige_outro_titular_conceder` (0016) e `ufs_da_regiao`, `definicao_itens`, `definicao_itens_json`, `definicao_calculo`, `definicao_exigir_aplicavel`, `definicao_exigir_sem_lote_aberto` e `exige_solicitar_ou_aprovar_taxa` (0017) e `parametro_validar_valor` e `parametro_trocar_valor` (0018) não têm GRANT para ninguém.
 
 `conceder_permissao_inicial` e `revogar_permissao_manual` não têm GRANT: só o dono (`safetycar_migrator`) e o superusuário as executam. Todas as funções da 0014 e da 0015 que podem ser chamadas têm `REVOKE … FROM PUBLIC`. As auxiliares internas da 0015 (`arredondar_centavos`, `exige_operador_ativo`, `reajuste_validar`, `reajuste_calculo`, `reajuste_exigir_aplicavel`) não têm GRANT para ninguém: rodam dentro das funções da Central.
 
@@ -852,6 +857,60 @@ Lote já decidido: SC020.
 
 **Auditoria**: as linhas automáticas (`parametrizacao_insert` e `parametrizacao_update` em lote, itens, decisão e regras) mais os eventos `central_definicao_taxa_solicitada`, `_aprovada`, `_rejeitada` e `_cancelada`, com só identificadores, situação antes e depois, quantidade e motivo. Se a auditoria falhar, nada é gravado (há teste).
 
+### Parâmetros de negócio (0018)
+
+Regras de negócio que mudam com o tempo ficam aqui, e não em código. O **catálogo** muda só por migração; o **valor** muda pela Central. É uma exceção à regra "parametrização só por migração", aprovada no desenho de 23/11/2026 (pendência 19). Não é dado pessoal, exceto os identificadores de operador no histórico.
+
+**parametro**: catálogo.
+
+| Coluna | Tipo | Finalidade |
+|---|---|---|
+| chave | text PK | identificador (`^[a-z][a-z0-9_]*$`) |
+| descricao | text | o que o parâmetro controla |
+| tipo | text CHECK | `percentual` (até 2 casas: 1 pb = 0,01%) ou `dias` (inteiro) |
+| minimo, maximo | numeric | faixa permitida; CHECK `minimo <= maximo` |
+| sensivel | boolean | sensível muda só por pedido aprovado por outro operador; comum muda direto |
+| ativo | boolean | parâmetro inativo não aceita valor nem aparece na visão |
+
+CHECK `ck_parametro_limite_reajuste`: `limite_variacao_reajuste` é sempre sensível e o máximo dele nunca passa de 50, o teto absoluto do reajuste.
+
+Carga (decidida em 23/11/2026, com referência ao desenho):
+
+| chave | tipo | faixa | sensível | valor |
+|---|---|---|---|---|
+| `limite_variacao_reajuste` | percentual | 1 a 50 | sim | 20 (usado pelo reajuste a partir da 0019) |
+| `alerta_documento_dias` | dias | 1 a 180 | não | 30 (a rotina de vencimento ainda não existe) |
+
+**parametro_valor**: histórico, com a mesma técnica de `regra_taxa`.
+- Vigência `[início, fim)`, imutável (`vigencia_imutavel`, SC012), sem sobreposição (`ex_parametro_valor_vigencia`, 23P01) e um só valor em aberto por parâmetro (`ux_parametro_valor_aberto`).
+- Colunas: `valor`, `origem` (`migracao`, `central_direta` ou `central_aprovada`), `referencia_alinhamento`, `motivo` (obrigatório), `alterado_por` (quem alterou ou pediu), `aprovado_por` e `alteracao_id` (só no sensível) e `papel_bd`.
+- CHECK `ck_parametro_valor_origem`: cada origem tem exatamente os autores que lhe cabem, e quem aprovou nunca é quem pediu.
+- O trigger confere, para qualquer escritor, o valor contra o catálogo (SC026) e o caminho (SC027).
+
+**parametro_alteracao** e **parametro_alteracao_decisao**: o pedido de mudança de parâmetro sensível e a decisão, uma por pedido, ambos só de inserção.
+- O pedido guarda `valor_novo`, `valor_na_criacao` (o vigente quando foi feito), a referência e o motivo.
+- Um só pedido em aberto por parâmetro (SC024, no trigger).
+- `vw_parametro_alteracao` deriva a situação (`solicitado` enquanto não há decisão).
+
+**Consulta**:
+- `parametro_vigente(chave, instante = now())` devolve o valor. Recusa com **SC013** se não houver valor, que nunca vale zero, e com 22023 se o parâmetro não existir. É da Central e das funções do banco.
+- `vw_parametro_vigente` traz chave, descrição, tipo, faixa, sensível, valor e início, sem operador nem motivo. É a **única** coisa que o app lê. Não é `security_invoker`, de propósito: o app não lê as tabelas, porque o histórico identifica operadores.
+
+**Funções da Central** (SECURITY DEFINER, EXECUTE só para o `safetycar_central`; ator verificado, auditado e restaurado no fim):
+
+| Função | Quem | O que faz |
+|---|---|---|
+| `alterar_parametro(ator, chave, valor, motivo, referencia)` | `administrar_parametros` | só parâmetro **comum** (sensível: SC027); troca o valor na hora |
+| `solicitar_alteracao_parametro(ator, chave, valor, motivo, referencia)` | `administrar_parametros` | só parâmetro **sensível** (comum: SC027); grava o pedido sem mudar o valor |
+| `aprovar_alteracao_parametro(ator, id, motivo)` | `administrar_parametros`, **nunca quem pediu** (SC017) | troca o valor; devolve o id do novo valor |
+| `rejeitar_alteracao_parametro(ator, id, motivo)` | `administrar_parametros`, nunca quem pediu (SC017) | só grava a decisão |
+| `cancelar_alteracao_parametro(ator, id, motivo)` | quem pediu (ativo) ou quem tem `administrar_parametros` | só grava a decisão |
+
+- Valor fora da faixa, fracionário em dias ou com mais de 2 casas em percentual: SC026. Valor **igual ao vigente** é recusado (22023), para não criar versão vazia no histórico.
+- **Troca**: trava a linha do parâmetro (`FOR UPDATE`), lê o relógio (`clock_timestamp()`), encerra o valor atual nesse instante e abre o novo no mesmo instante. Nunca no passado.
+- A aprovação trava o pedido e depois o parâmetro, sempre nesta ordem, e confere de novo o valor contra o catálogo de agora. Se o catálogo tiver mudado por migração, o pedido pode passar a dar SC026.
+- **Auditoria**: as linhas automáticas mais os eventos `central_parametro_alterado` (comum), `central_parametro_solicitado` e `central_parametro_decidido` (aprovado, rejeitado ou cancelado), com chave, valor antes e depois, referência e motivo. Se a auditoria falhar, nada é gravado (há teste).
+
 ### Controle
 
 **schema_migracao**: criada pelo `migrar.sh`: `versao` PK, `arquivo`, `sha256`, `aplicada_em`. Não é dado pessoal.
@@ -887,6 +946,9 @@ As regras ficam no banco para valer para qualquer cliente que venha a existir. E
 | SC022 | resultado negativo, zerado a partir de um valor maior que zero, acima de 10000 pb, ou nada a alterar | `reajuste_exigir_aplicavel()` |
 | SC023 | revogar (origem `operador`) ou desativar o último titular efetivo de `conceder_permissao` (0016) | `exige_outro_titular_conceder()`, chamada por `permissao_revogacao_validar()` e `operador_ultimo_titular()` |
 | SC024 | já existe pedido em aberto para o mesmo alvo: na 0017, item de outro lote de definição ainda sem decisão, no mesmo escopo | `definicao_exigir_sem_lote_aberto()` |
+| SC024 | também (0018): pedido de alteração de parâmetro com outro pedido em aberto para o mesmo parâmetro | `parametro_alteracao_preparar()` |
+| SC026 | valor de parâmetro fora do mínimo e máximo, ou incompatível com o tipo (dias inteiros; percentual com até 2 casas) (0018) | `parametro_validar_valor()` |
+| SC027 | caminho errado: parâmetro sensível alterado direto, ou parâmetro comum por pedido (0018) | `parametro_valor_validar()`, `parametro_alteracao_preparar()`, `alterar_parametro()`, `solicitar_alteracao_parametro()` |
 | SC028 | definição de regra que já está definida (o caminho é o reajuste) (0017) | `definicao_exigir_aplicavel()` |
 | SC016, SC017, SC020, SC021 | também na definição (0017): ator sem permissão; decidir o próprio lote; lote já decidido; regra futura agendada no escopo | funções da 0017 |
 | SC016, SC017, SC012, SC013 | também no reajuste: ator sem permissão ou operador inativo; autoaprovação desligada; início no passado; regra "a definir" no escopo | funções da 0015 |
@@ -1049,9 +1111,11 @@ Registradas aqui; nenhuma foi decidida nesta fase.
     7. (0016) Os dois últimos titulares de `conceder_permissao` revogam a própria permissão ao mesmo tempo (7a), ou um titular é desativado enquanto o outro revoga a própria (7b): a segunda operação espera o lock do catálogo e termina em SC023, nunca em 40P01. Sobra um titular efetivo.
     8. (0017) Duas aprovações simultâneas do mesmo lote de definição: a segunda espera o advisory lock e termina em SC020. Há uma decisão só e uma regra definida só, contígua à regra a definir que encerrou.
     9. (0017) Duas solicitações simultâneas de definição no mesmo escopo: a segunda espera o advisory lock e termina em SC024. Sobra um lote só.
+    10. (0018) Duas aprovações simultâneas do mesmo pedido de parâmetro sensível: a segunda espera o lock do pedido e termina em SC020. Há um valor novo só e um só valor em aberto, contíguo ao anterior.
+    11. (0018) Dois pedidos simultâneos para o mesmo parâmetro sensível: o segundo espera o lock do parâmetro e termina em SC024.
 
-    No fim, o script confere que não há vigência sobreposta em `regra_taxa` nem em `politica_garantia`.
+    No fim, o script confere que não há vigência sobreposta em `regra_taxa`, `politica_garantia` nem `parametro_valor`.
 18. **`analisar_cadastros` ainda não é imposta pelo banco** (0016). A aprovação de parceiro (`parceiro.aprovado_por`) e a revisão de documento (`parceiro_documento.revisado_por`) são feitas pelo app por DML, e o banco só exige perfil `central` (SC001). A permissão vale apenas na API da Central até essas ações virarem funções do `safetycar_central`, numa migração futura.
-19. **Exceção à regra "parametrização só por migração"** (desenho de 23/11/2026). Os parâmetros da 0018 (`limite_variacao_reajuste`, `alerta_documento_dias`) e a definição da primeira tarifa (0017) passam a ser alterados pela Central, pelas funções do `safetycar_central`, com permissão, auditoria e, quando sensíveis, aprovação de outro operador. Fica como o reajuste da 0015. O app continua sem escrever em parametrização, e as demais tabelas (níveis, garantia, provedores) continuam só por migração.
+19. **Exceção à regra "parametrização só por migração"** (desenho de 23/11/2026; aplicada na 0017 e na 0018). Os valores dos parâmetros da 0018 (`limite_variacao_reajuste`, `alerta_documento_dias`; o catálogo continua só por migração) e a definição da primeira tarifa (0017) passam a ser alterados pela Central, pelas funções do `safetycar_central`, com permissão, auditoria e, quando sensíveis, aprovação de outro operador. Fica como o reajuste da 0015. O app continua sem escrever em parametrização, e as demais tabelas (níveis, garantia, provedores) continuam só por migração.
 20. **Não incluir dado pessoal no campo motivo.** O motivo é texto livre e vai para as tabelas de histórico e para a auditoria (`depois ->> 'motivo'`). A interface da Central deve avisar isso, e a API não deve preencher o motivo com nome, e-mail, CPF ou telefone. Os testes conferem que não há e-mail na auditoria das permissões.
 21. **Endurecimento de permissões (0020, a planejar).** O `safetycar_app` pode fazer UPDATE em `usuario.status` (0007) e, com isso, suspender o último titular sem passar pela SC023. Também tem INSERT em `auditoria`, então pode gravar eventos `central_*` falsos. Isso fica fora das 0016 a 0019, e o plano da 0020 vem antes de qualquer SQL.

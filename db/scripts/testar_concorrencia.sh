@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Testes de concorrência da 0014 a 0017 com DUAS SESSÕES SIMULTÂNEAS de verdade.
+# Testes de concorrência da 0014 a 0018 com DUAS SESSÕES SIMULTÂNEAS de verdade.
 # Fora da suíte padrão (o testar.sh roda uma sessão por arquivo e não cobre isto).
 #
 #   bash db/scripts/testar_concorrencia.sh
@@ -417,6 +417,45 @@ else
 fi
 
 # ---------------------------------------------------------------------------------------------
+# 0018: parâmetros. S1 e S2 pedem; P1 e P2 decidem (todos com administrar_parametros).
+sql >/dev/null <<SQL
+SELECT conceder_permissao('$U1', o::uuid, 'administrar_parametros', '[TESTE] conc: parâmetros')
+  FROM unnest(ARRAY['$S1','$S2','$P1','$P2']) o;
+SQL
+LIMITE="(SELECT valor FROM vw_parametro_vigente WHERE chave = 'limite_variacao_reajuste')"
+
+echo "== Cenário 10: duas aprovações simultâneas do MESMO pedido de parâmetro sensível"
+X10="$(sql -c "SELECT solicitar_alteracao_parametro('$S1', 'limite_variacao_reajuste', 25, '[TESTE] conc 10: pedido')")"
+aprova_par() { echo "SELECT aprovar_alteracao_parametro('$1', '$2', '[TESTE] conc: aprovação');"; }
+corrida safetycar_central "$(aprova_par "$P1" "$X10")" safetycar_central "$(aprova_par "$P2" "$X10")"
+if confere_sessoes SC020; then
+  ok "P1 aprovou; P2 esperou ($ESPERA_B) e terminou em SC020"
+  confere "uma única decisão, um único valor novo (25) e um só valor em aberto, contíguo ao anterior" \
+    "(SELECT count(*) FROM parametro_alteracao_decisao WHERE alteracao_id = '$X10') = 1
+     AND (SELECT count(*) FROM parametro_valor WHERE alteracao_id = '$X10') = 1
+     AND $LIMITE = 25
+     AND (SELECT count(*) FROM parametro_valor WHERE parametro_chave = 'limite_variacao_reajuste' AND fim_vigencia IS NULL) = 1
+     AND (SELECT o.fim_vigencia = n.inicio_vigencia FROM parametro_valor n
+            JOIN parametro_valor o ON o.parametro_chave = n.parametro_chave AND o.fim_vigencia = n.inicio_vigencia
+           WHERE n.alteracao_id = '$X10')"
+else
+  falhou "10: $MOTIVO"
+fi
+
+echo "== Cenário 11: dois pedidos simultâneos para o mesmo parâmetro sensível"
+corrida safetycar_central "SELECT solicitar_alteracao_parametro('$S1', 'limite_variacao_reajuste', 30, '[TESTE] conc 11: A');" \
+        safetycar_central "SELECT solicitar_alteracao_parametro('$S2', 'limite_variacao_reajuste', 35, '[TESTE] conc 11: B');"
+if confere_sessoes SC024; then
+  ok "A pediu; B esperou ($ESPERA_B) e terminou em SC024"
+  confere "um único pedido em aberto, o de S1, e o limite segue 25" \
+    "(SELECT count(*) FROM vw_parametro_alteracao WHERE parametro_chave = 'limite_variacao_reajuste' AND situacao = 'solicitado') = 1
+     AND (SELECT solicitado_por = '$S1' FROM vw_parametro_alteracao WHERE parametro_chave = 'limite_variacao_reajuste' AND situacao = 'solicitado')
+     AND $LIMITE = 25"
+else
+  falhou "11: $MOTIVO"
+fi
+
+# ---------------------------------------------------------------------------------------------
 echo "== Checagem final de sobreposição"
 confere "nenhuma vigência sobreposta em regra_taxa" \
   "NOT EXISTS (SELECT 1 FROM regra_taxa a JOIN regra_taxa b ON a.id < b.id
@@ -427,6 +466,10 @@ confere "nenhuma vigência sobreposta em politica_garantia" \
   "NOT EXISTS (SELECT 1 FROM politica_garantia a JOIN politica_garantia b ON a.id < b.id
                 AND a.servico_codigo = b.servico_codigo AND a.nivel_verificacao = b.nivel_verificacao
                 AND a.modalidade = b.modalidade
+                AND tstzrange(a.inicio_vigencia, a.fim_vigencia, '[)') && tstzrange(b.inicio_vigencia, b.fim_vigencia, '[)'))"
+confere "nenhuma vigência sobreposta em parametro_valor" \
+  "NOT EXISTS (SELECT 1 FROM parametro_valor a JOIN parametro_valor b ON a.id < b.id
+                AND a.parametro_chave = b.parametro_chave
                 AND tstzrange(a.inicio_vigencia, a.fim_vigencia, '[)') && tstzrange(b.inicio_vigencia, b.fim_vigencia, '[)'))"
 
 echo
