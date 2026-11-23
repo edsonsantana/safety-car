@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Testes de concorrência da 0014 a 0019 com DUAS SESSÕES SIMULTÂNEAS de verdade.
+# Testes de concorrência da 0014 a 0020 com DUAS SESSÕES SIMULTÂNEAS de verdade.
 # Fora da suíte padrão (o testar.sh roda uma sessão por arquivo e não cobre isto).
 #
 #   bash db/scripts/testar_concorrencia.sh
@@ -471,6 +471,22 @@ if confere_sessoes SC024; then
      AND (SELECT solicitado_por = '$S1' FROM vw_reajuste_taxa WHERE situacao = 'solicitado' AND servicos = '{pneu}' AND componentes = '{minimo}')"
 else
   falhou "12: $MOTIVO"
+fi
+
+# ---------------------------------------------------------------------------------------------
+# 0020: último titular também no status do usuário. U1 é o único titular efetivo (7a/7b).
+echo "== Cenário 13: suspensão de um titular (status do usuário) e autorrevogação do outro, ao mesmo tempo"
+sql >/dev/null -c "SELECT conceder_permissao('$U1', '$P1', 'conceder_permissao', '[TESTE] conc 13: segundo titular')"
+corrida safetycar_central "SELECT definir_status_usuario_central('$U1', '$P1', 'suspenso', '[TESTE] conc 13: A');" \
+        safetycar_central "SELECT revogar_permissao('$U1', '$U1', 'conceder_permissao', '[TESTE] conc 13: B');"
+if confere_sessoes SC023; then
+  ok "P1 foi suspenso; a revogação de U1 esperou ($ESPERA_B) e terminou em SC023"
+  confere "U1 segue como único titular efetivo e P1 está suspenso" \
+    "($EFETIVOS_CONCEDER) = 1
+     AND EXISTS (SELECT 1 FROM vw_permissao_vigente WHERE permissao_codigo = 'conceder_permissao' AND operador_id = '$U1' AND efetiva)
+     AND (SELECT status = 'suspenso' FROM usuario WHERE id = '$P1')"
+else
+  falhou "13: $MOTIVO"
 fi
 
 # ---------------------------------------------------------------------------------------------

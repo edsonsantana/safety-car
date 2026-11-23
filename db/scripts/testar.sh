@@ -9,6 +9,9 @@
 # - Arquivo terminado em _central.sql: o trecho ANTES da linha "-- @como_central" prepara dados
 #   como postgres; depois dela a sessão passa a safetycar_central (SET SESSION AUTHORIZATION,
 #   então session_user é o papel da Central) e os utilitários são criados já como ele.
+# - Arquivo terminado em _app.sql com a linha "-- @como_app": mesma ideia, para preparar dados
+#   que o app não pode criar (ex.: usuário da Central, desde a 0020). Sem a linha, o arquivo
+#   roda inteiro conectado como safetycar_app.
 # - Falha = RAISE EXCEPTION 'FALHOU: ...' -> o script para com código diferente de zero.
 set -euo pipefail
 source "$(dirname "$0")/_comum.sh"
@@ -42,21 +45,26 @@ for caminho in db/tests/[0-9][0-9]_*.sql; do
   papel=safetycar_migrator
   [[ "$arquivo" == *_app.sql ]] && papel=safetycar_app
   conexao="$papel"
+  marcador=""
   if [[ "$arquivo" == *_central.sql ]]; then
     papel=safetycar_central
     conexao=postgres
-    if ! grep -q '^-- @como_central$' "$caminho"; then
-      echo "!! $arquivo não tem a linha '-- @como_central'" >&2
+    marcador='-- @como_central'
+    if ! grep -qx -- "$marcador" "$caminho"; then
+      echo "!! $arquivo não tem a linha '$marcador'" >&2
       exit 1
     fi
+  elif [[ "$arquivo" == *_app.sql ]] && grep -qx -- '-- @como_app' "$caminho"; then
+    conexao=postgres
+    marcador='-- @como_app'
   fi
 
   corpo_do_teste() {
-    if [[ "$arquivo" == *_central.sql ]]; then
-      sed '/^-- @como_central$/q' "$caminho"
-      echo; echo "SET SESSION AUTHORIZATION safetycar_central;"
+    if [[ -n "$marcador" ]]; then
+      sed "/^${marcador}\$/q" "$caminho"
+      echo; echo "SET SESSION AUTHORIZATION $papel;"
       cat db/tests/00_util.sql
-      sed '1,/^-- @como_central$/d' "$caminho"
+      sed "1,/^${marcador}\$/d" "$caminho"
     else
       cat db/tests/00_util.sql "$caminho"
     fi

@@ -79,15 +79,11 @@ SELECT pg_temp.espera_erro($$SELECT regra_taxa_vigente('guincho', 'guincho_leve'
 SELECT pg_temp.espera_erro($$SELECT politica_garantia_vigente('guincho_leve', 1, 'pix_pre_pago')$$,
   'SC013', 'app: garantia da carga é recusada');
 
--- ---------- Carga auditada ----------
-SELECT pg_temp.confere(
-  (SELECT count(*) >= 42 FROM auditoria
-    WHERE entidade = 'regra_taxa' AND acao = 'parametrizacao_insert' AND papel_bd = 'safetycar_migrator'),
-  'carga das taxas está na auditoria, feita pelo safetycar_migrator');
-SELECT pg_temp.confere(
-  (SELECT count(*) >= 12 FROM auditoria
-    WHERE entidade = 'nivel_requisito' AND acao = 'parametrizacao_insert' AND papel_bd = 'safetycar_migrator'),
-  'carga dos requisitos por nível está na auditoria');
+-- ---------- Auditoria ----------
+-- Desde a 0020 o app não lê a auditoria (só insere). A carga auditada e o papel_bd das linhas
+-- gravadas pelo app são conferidos em 24_endurecimento_app.sql (como postgres, no fim).
+SELECT pg_temp.espera_erro($$SELECT count(*) FROM auditoria$$,
+  '42501', 'app não lê a auditoria (0020)');
 
 -- ---------- Histórico de nível pelo app ----------
 INSERT INTO usuario (id, keycloak_sub, email, perfil) VALUES
@@ -108,12 +104,6 @@ SELECT pg_temp.espera_erro($$UPDATE nivel_verificacao_historico SET nivel = 3$$,
   '42501', 'app não altera o histórico de nível');
 SELECT pg_temp.espera_erro($$DELETE FROM nivel_verificacao_historico$$,
   '42501', 'app não apaga o histórico de nível');
-SELECT pg_temp.confere(
-  EXISTS (SELECT 1 FROM auditoria WHERE entidade = 'nivel_verificacao_historico' AND papel_bd = 'safetycar_app'),
-  'mudança de nível feita pelo app fica na auditoria com papel_bd = safetycar_app');
 SELECT pg_temp.aceita($$
   INSERT INTO auditoria (acao, entidade, papel_bd) VALUES ('teste_app', 'teste', 'safetycar_migrator')$$,
-  'app insere na auditoria tentando forjar o papel');
-SELECT pg_temp.confere(
-  (SELECT papel_bd = 'safetycar_app' FROM auditoria WHERE acao = 'teste_app'),
-  'app não forja papel_bd');
+  'app insere na auditoria (o papel_bd enviado é ignorado; conferido em 24_endurecimento_app.sql)');

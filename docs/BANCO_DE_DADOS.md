@@ -32,7 +32,7 @@ bash db/scripts/criar_papeis.sh --sincronizar  # alinha com o .env a senha dos p
 bash db/scripts/testar_senhas.sh  # à parte: testa os dois modos acima num contêiner descartável
 bash db/scripts/migrar.sh     # aplica as migrações pendentes no banco "safetycar"
 bash db/scripts/testar.sh     # recria "safetycar_teste" do zero, migra duas vezes e roda db/tests
-bash db/scripts/testar_concorrencia.sh  # à parte: duas sessões simultâneas em "safetycar_conc" (0014 a 0019)
+bash db/scripts/testar_concorrencia.sh  # à parte: duas sessões simultâneas em "safetycar_conc" (0014 a 0020)
 bash db/scripts/primeiro_administrador.sh --email … --sub … [--simular]  # uma vez por ambiente (ver 0014)
 bash db/scripts/testar_primeiro_administrador.sh  # à parte: testa o script acima em bancos descartáveis
 ```
@@ -40,6 +40,7 @@ bash db/scripts/testar_primeiro_administrador.sh  # à parte: testa o script aci
 - `migrar.sh [banco]` aplica cada migração numa transação única e grava `versao`, `arquivo` e `sha256` em `schema_migracao`. Uma migração já aplicada é pulada. **Se o arquivo de uma migração aplicada mudar, o script para:** migração aplicada não se edita; cria-se outra.
 - `testar.sh` não toca no banco de desenvolvimento. Cada arquivo de teste roda em `BEGIN … ROLLBACK`. Falha = `FALHOU: …`, e o script sai com código ≠ 0.
   - Sufixo do arquivo de teste: `_app.sql` roda como `safetycar_app`; `_central.sql` prepara dados como `postgres` até a linha `-- @como_central` e, dali em diante, roda como `safetycar_central` (`SET SESSION AUTHORIZATION`, então `session_user` é o papel da Central); os demais rodam como `safetycar_migrator`.
+  - Um `_app.sql` com a linha `-- @como_app` faz o mesmo: prepara como `postgres` (por exemplo, um usuário da Central, que o app não cria desde a 0020) e roda o resto como `safetycar_app`. Sem a linha, o arquivo roda inteiro conectado como o app.
   - O `testar.sh` exige que o papel `safetycar_central` exista.
   - O `testar.sh` roda uma sessão por arquivo e **não cobre concorrência**. Isso fica no `testar_concorrencia.sh`, abaixo.
 - `testar_concorrencia.sh`: fora da suíte padrão. Cria o banco descartável `safetycar_conc` e aplica as migrações do zero. Roda os cenários com **duas sessões `psql` simultâneas** e apaga o banco no fim, mesmo em caso de falha ou Ctrl+C. O `safetycar` não é tocado.
@@ -95,6 +96,7 @@ Imagem fixada: `postgis/postgis:16-3.6`, digest `sha256:d07ce3f06f657b6516c75114
 | `0017_regioes_definicao_taxa.sql` | `regiao` e `regiao_uf` (carga IBGE), `ufs_da_regiao()`; `definicao_taxa`, `definicao_taxa_item` e `definicao_taxa_decisao` (somente inserção), `vw_definicao_taxa`; `regra_taxa.definicao_id` e CHECKs de origem refeitos; funções da Central `simular_definicao_taxa` (por itens e por lote), `solicitar_`, `aprovar_`, `rejeitar_` e `cancelar_definicao_taxa` |
 | `0018_parametros.sql` | `parametro` (catálogo), `parametro_valor` (histórico com vigência), `parametro_alteracao` e `parametro_alteracao_decisao` (somente inserção), `vw_parametro_alteracao`, `vw_parametro_vigente`; `parametro_vigente()`; carga `limite_variacao_reajuste` = 20 e `alerta_documento_dias` = 30; funções da Central `alterar_parametro`, `solicitar_`, `aprovar_`, `rejeitar_` e `cancelar_alteracao_parametro` |
 | `0019_reajuste_percentual_limite.sql` | reajuste só percentual e com início imediato; `reajuste_taxa.regioes`, `motivo_excecao` e `limite_bp_na_criacao`; CHECKs `NOT VALID` para os lotes novos; SC025 (limite) e SC024 (lote em aberto sobreposto) no trigger; `percentual_para_bp()`, `reajuste_ufs_escopo()`, `reajuste_exigir_sem_lote_aberto()`; assinaturas antigas de simular, solicitar e aprovar removidas e recriadas; rejeitar recusa o solicitante; `ck_permissao_reajuste_sem_auto`; `vw_reajuste_taxa` recriada e `vw_reajuste_taxa_regra` |
+| `0020_endurecimento_permissoes.sql` | `usuario_central_protegido()` (SC029 para o app e SC023 no status, na exclusão e no perfil do último titular); `auditoria_acao_reservada()` (SC030); SELECT do app em `auditoria` revogado; `vw_operador_central` só conta acesso gravado pela Central ou pelo migrator; funções da Central `cadastrar_usuario_central`, `definir_status_usuario_central` e `registrar_mfa_central` |
 
 Privilégios do `safetycar_app` (0007):
 
@@ -102,7 +104,8 @@ Privilégios do `safetycar_app` (0007):
 |---|---|
 | `endereco`, `tomador`, `veiculo`, `contato_emergencia`, `parceiro`, `parceiro_tipo`, `parceiro_membro`, `parceiro_servico`, `parceiro_viatura`, `parceiro_documento`, `parceiro_conta_recebimento`, `parceiro_area_atuacao`, `parceiro_posicao_atual`, `meio_pagamento`, `dispositivo`, `bloqueio` | SELECT, INSERT, UPDATE, DELETE |
 | `usuario`, `consentimento`, `verificacao_identidade` | SELECT, INSERT, UPDATE. Sem DELETE: a exclusão de usuário é lógica ou por anonimização; consentimento e verificação servem de prova perante a LGPD |
-| `sinal_risco`, `auditoria` | SELECT, INSERT (registros de evento) |
+| `sinal_risco` | SELECT, INSERT (registro de evento) |
+| `auditoria` | INSERT. O SELECT da 0007 foi revogado na 0020: o app não lê a auditoria da Central |
 | `tipo_parceiro`, `servico_catalogo`, `schema_migracao` | SELECT (mudam só por migração) |
 | `vw_parceiro_posicao_valida` | SELECT |
 | `parceiros_proximos`, `esta_bloqueado`, `cnpj_valido`, `cnpj_dv` | EXECUTE |
@@ -126,6 +129,9 @@ Privilégios concedidos nas migrações seguintes (cada uma declara os seus):
 | `vw_parametro_vigente` | SELECT (chave, descrição, tipo, faixa, sensível, valor e início; sem operador nem motivo) | 0018 |
 | `parametro`, `parametro_valor`, `parametro_alteracao*`, `vw_parametro_alteracao` e todas as funções da 0018, inclusive `parametro_vigente` | **nenhum** | 0018 |
 | `vw_reajuste_taxa_regra` e todas as funções da 0019 | **nenhum** | 0019 |
+| `auditoria` | **SELECT revogado** (mantém INSERT); ações com prefixo reservado recusadas (SC030) | 0020 |
+| `usuario` | os mesmos SELECT, INSERT e UPDATE, mas o trigger limita o app: não cria nem promove usuário central e, num usuário central, só altera `ultimo_login_em` (SC029) | 0020 |
+| funções da 0020 | **nenhum** | 0020 |
 
 Privilégios do `safetycar_central` (0014):
 
@@ -143,6 +149,7 @@ Privilégios do `safetycar_central` (0014):
 | `parametro`, `parametro_valor`, `parametro_alteracao`, `parametro_alteracao_decisao`, `vw_parametro_alteracao`, `vw_parametro_vigente` (0018) | SELECT |
 | `parametro_vigente`, `alterar_parametro`, `solicitar_alteracao_parametro`, `aprovar_alteracao_parametro`, `rejeitar_alteracao_parametro`, `cancelar_alteracao_parametro` (0018) | EXECUTE |
 | `vw_reajuste_taxa` (recriada) e `vw_reajuste_taxa_regra` (0019) | SELECT |
+| `cadastrar_usuario_central`, `definir_status_usuario_central`, `registrar_mfa_central` (0020) | EXECUTE |
 | `simular_reajuste_taxa` (nova assinatura, por percentual), `solicitar_reajuste_taxa` e `aprovar_reajuste_taxa` (novas assinaturas) (0019); `simular_reajuste_taxa(ator, lote)`, `rejeitar_` e `cancelar_reajuste_taxa` foram redefinidas mantendo o GRANT | EXECUTE |
 | demais tabelas (inclusive `usuario` e `auditoria`) | nenhum |
 
@@ -274,11 +281,11 @@ Coluna **Pessoal**: *sim* = dado pessoal (LGPD) ou pseudonimizado (hash) de pess
 | perfil | text CHECK | `tomador`, `parceiro`, `central` | não |
 | status | text CHECK | `pendente`, `ativo`, `suspenso`, `bloqueado`, `excluido` | não |
 | email_verificado_em, celular_verificado_em | timestamptz | quando foi verificado | sim |
-| mfa_ativado_em | timestamptz | espelho do estado do 2FA no Keycloak | sim |
-| ultimo_login_em | timestamptz | último acesso | sim |
+| mfa_ativado_em | timestamptz | espelho **informativo** do estado do 2FA no Keycloak. Num usuário da Central, só `registrar_mfa_central` grava (0020); o app não. **A Central não decide 2FA por esta coluna**: a exigência é conferida pela API no token (OTP na sessão, `acr` do Keycloak) | sim |
+| ultimo_login_em | timestamptz | último acesso; a única coluna que o app altera num usuário da Central (0020) | sim |
 | excluido_em | timestamptz | exclusão lógica; CHECK: preenchido se e só se `status = 'excluido'` | sim |
 
-Unicidades: `keycloak_sub`, `email`, `celular_e164`. Trigger `tg_usuario_perfil_vinculado` (0004): o perfil não muda se o usuário já é tomador ou membro de parceiro.
+Unicidades: `keycloak_sub`, `email`, `celular_e164`. Trigger `tg_usuario_perfil_vinculado` (0004): o perfil não muda se o usuário já é tomador, membro de parceiro ou operador da Central (0014). Trigger `tg_usuario_central_protegido` (0020): ver [Endurecimento](#endurecimento-de-permissões-0020).
 
 **consentimento**: histórico de concessões e revogações (LGPD).
 
@@ -935,6 +942,51 @@ Carga (decidida em 23/11/2026, com referência ao desenho):
 - A aprovação trava o pedido e depois o parâmetro, sempre nesta ordem, e confere de novo o valor contra o catálogo de agora. Se o catálogo tiver mudado por migração, o pedido pode passar a dar SC026.
 - **Auditoria**: as linhas automáticas mais os eventos `central_parametro_alterado` (comum), `central_parametro_solicitado` e `central_parametro_decidido` (aprovado, rejeitado ou cancelado), com chave, valor antes e depois, referência e motivo. Se a auditoria falhar, nada é gravado (há teste).
 
+### Endurecimento de permissões (0020)
+
+O `safetycar_app` (API pública) tinha, desde a 0007, SELECT, INSERT e UPDATE em `usuario` e SELECT e INSERT em `auditoria`. Um app comprometido conseguiria:
+- **tomar a identidade** de um operador, trocando o `keycloak_sub` (a Central identifica o operador pelo `sub` do JWT);
+- suspender o último titular por fora da SC023, ou reativar um operador suspenso;
+- criar usuário central ou promover alguém a central;
+- forjar eventos `central_*`, inclusive o "último acesso";
+- ler toda a auditoria da Central.
+
+A 0020 fecha esses caminhos. As regras dependem do papel que conectou (`session_user`), que o app não consegue trocar.
+
+**`usuario`** (trigger `usuario_central_protegido`):
+
+| Quem | Regra | Erro |
+|---|---|---|
+| app | não cria usuário com perfil `central` nem muda perfil para ou de `central` | SC029 |
+| app | num usuário central, só altera `ultimo_login_em`; `keycloak_sub`, e-mail, celular, status, `excluido_em`, verificações e `mfa_ativado_em` ficam de fora | SC029 |
+| qualquer escritor | o último titular efetivo de `conceder_permissao` não sai de `ativo`, não recebe `excluido_em` e não muda de perfil. A regra vem antes da SC001 | SC023 |
+
+Tomador e parceiro não mudam: o app continua criando e alterando esses usuários como antes. A recuperação de um titular comprometido continua manual: `revogar_permissao_manual` e depois `conceder_permissao_inicial`. Trocar o `keycloak_sub` de um usuário central fica só com o migrator.
+
+**Funções da Central** (SECURITY DEFINER, EXECUTE só para o `safetycar_central`):
+
+| Função | Quem | O que faz |
+|---|---|---|
+| `cadastrar_usuario_central(ator, keycloak_sub, email, motivo)` | `conceder_permissao` | cria o usuário com perfil `central` e status `ativo` (e-mail normalizado). Não o torna operador; para isso, `cadastrar_operador`. **O e-mail fica só em `usuario`**: a auditoria (`central_cadastrar_usuario_central`) guarda perfil, status e motivo, sem e-mail nem `sub` |
+| `definir_status_usuario_central(ator, usuario, status, motivo)` | `conceder_permissao`, nunca a si mesmo (SC017) | `ativo`, `suspenso` ou `bloqueado` (exclusão e pendente não são por aqui: 22023); trava o catálogo antes do usuário; a SC023 vale pelo trigger; evento `central_definir_status_usuario` |
+| `registrar_mfa_central(ator, mfa_ativado_em)` | o próprio usuário ativo da Central | grava o espelho do 2FA; nulo = desativado; no futuro: 22023; evento `central_registrar_mfa`, só com verdadeiro ou falso |
+
+**2FA**: `mfa_ativado_em` é só um espelho informativo. **A Central não decide 2FA por essa coluna.** A exigência de 2FA para ações sensíveis é conferida pela API no token (OTP na sessão, `acr` do Keycloak). Hoje ninguém grava essa coluna; num usuário da Central, só `registrar_mfa_central` pode gravá-la.
+
+**`auditoria`**:
+- O app **não lê** mais a auditoria (SELECT revogado) e continua inserindo. Antes de revogar, foi conferido que:
+  - nenhum `INSERT INTO auditoria` usa `RETURNING` ou `ON CONFLICT`, que exigiriam SELECT;
+  - os triggers gravam com `INSERT … VALUES` simples;
+  - a API não lê nem grava a auditoria.
+- O app não grava **direto** ação com prefixo reservado (`central_`, `migrator_` ou `parametrizacao_`): SC030.
+  - O trigger separa por `pg_trigger_depth()`: a profundidade 1 é um INSERT direto; maior que 1 é uma linha gravada por outro trigger. Por isso as linhas que `auditar_parametrizacao` grava numa escrita legítima do app (ex.: mudança de nível) continuam entrando.
+  - Nenhuma ação legítima do app usa esses prefixos fora de trigger.
+- `vw_operador_central` passou a contar só os `central_acesso` com `papel_bd` igual a `safetycar_central` ou `safetycar_migrator`. Uma linha antiga forjada pelo app não conta (há teste).
+
+**Locks**: `definir_status_usuario_central` trava o catálogo e depois o usuário, como as demais funções da 0016. Um UPDATE direto em `usuario` trava na ordem inversa, como nas outras escritas diretas, e numa corrida pode dar 40P01, mas nunca deixa a Central sem titular (cenário 13).
+
+**API**: o teste de integração `apps/api/test/integracao/banco.test.ts` passou a usar um usuário `parceiro`, e não `central`, para conferir o mapeamento de perfil e status, porque o app não cria mais usuário da Central.
+
 ### Controle
 
 **schema_migracao**: criada pelo `migrar.sh`: `versao` PK, `arquivo`, `sha256`, `aplicada_em`. Não é dado pessoal.
@@ -977,6 +1029,9 @@ As regras ficam no banco para valer para qualquer cliente que venha a existir. E
 | SC016, SC017, SC020, SC021 | também na definição (0017): ator sem permissão; decidir o próprio lote; lote já decidido; regra futura agendada no escopo | funções da 0017 |
 | SC016, SC017, SC013 | também no reajuste: ator sem permissão ou operador inativo; decidir o próprio pedido (aprovar ou, desde a 0019, rejeitar); regra "a definir" no escopo | funções da 0015 e da 0019 |
 | SC024 | também (0019): lote de reajuste com regra vigente em comum com outro lote ainda sem decisão | `reajuste_exigir_sem_lote_aberto()`, chamada por `reajuste_taxa_preparar()` |
+| SC023 | também (0020): o último titular efetivo de `conceder_permissao` saindo de `ativo`, recebendo `excluido_em` ou mudando de perfil em `usuario`, por qualquer escritor | `usuario_central_protegido()` |
+| SC029 | o app criando usuário central, mudando perfil para ou de central, ou alterando num usuário central qualquer coluna além de `ultimo_login_em` (0020) | `usuario_central_protegido()` |
+| SC030 | o app gravando direto na auditoria uma ação com prefixo reservado (`central_`, `migrator_`, `parametrizacao_`) (0020) | `auditoria_acao_reservada()` |
 | SC025 | percentual do reajuste acima do limite copiado no pedido, sem `motivo_excecao` (0019) | `reajuste_taxa_preparar()` |
 | 22023 | parâmetro inválido em `parceiros_proximos` (lat, lng, raio, serviço) | `parceiros_proximos()` |
 
@@ -1126,7 +1181,7 @@ Registradas aqui; nenhuma foi decidida nesta fase.
 13. Não há vínculo formal entre tipo de parceiro e serviço (quais serviços cada tipo presta); hoje só a carga de `regra_taxa` reflete isso. Desde a 0017, a definição de tarifa só aceita combinações que já existem em `regra_taxa`: uma combinação nova entra por migração.
 14. Ligar `meio_pagamento.psp` (texto livre, 0006) a `provedor_pagamento` quando o processador for escolhido.
 15. Base do percentual da garantia: como se calcula a estimativa do serviço (fase do chamado).
-16. **Cerca de 30 funções antigas (0002 a 0013) mantêm o EXECUTE padrão para PUBLIC** (padrão do PostgreSQL). Hoje não é grave: todas rodam com os privilégios de quem chama, e PUBLIC não conecta no banco. Avaliar um `REVOKE EXECUTE … FROM PUBLIC` geral com GRANTs explícitos, conferindo que os triggers continuam funcionando. As funções da 0014 já nascem sem PUBLIC, exceto as de trigger, que o PostgreSQL só aceita chamar como trigger.
+16. **Cerca de 30 funções antigas (0002 a 0013) mantêm o EXECUTE padrão para PUBLIC** (padrão do PostgreSQL). Hoje não é grave: todas rodam com os privilégios de quem chama, e PUBLIC não conecta no banco. Avaliar um `REVOKE EXECUTE … FROM PUBLIC` geral com GRANTs explícitos, conferindo que os triggers continuam funcionando. As funções da 0014 já nascem sem PUBLIC, exceto as de trigger, que o PostgreSQL só aceita chamar como trigger. **Fica para uma migração própria** (decidido ao planejar a 0020), com plano antes do SQL.
 17. ~~Teste de concorrência com duas sessões.~~ **Resolvida pelo `db/scripts/testar_concorrencia.sh`** (2026-11-20), fora da suíte padrão. Todos os cenários passaram **sem defeito nas migrações** e nenhuma migração nova foi necessária. Em todos, B ficou de fato bloqueada esperando lock:
     1. Duas concessões iniciais simultâneas de `conceder_permissao`, com usuários diferentes e com o mesmo usuário (depois da recuperação manual): uma conclui e a outra termina em SC018, nunca em 40P01. Sobra uma concessão vigente (0014).
     2. Duas aprovações simultâneas do mesmo lote: a segunda espera o advisory lock e termina em SC020. Há uma decisão só e uma versão nova só.
@@ -1141,11 +1196,13 @@ Registradas aqui; nenhuma foi decidida nesta fase.
     10. (0018) Duas aprovações simultâneas do mesmo pedido de parâmetro sensível: a segunda espera o lock do pedido e termina em SC020. Há um valor novo só e um só valor em aberto, contíguo ao anterior.
     11. (0018) Dois pedidos simultâneos para o mesmo parâmetro sensível: o segundo espera o lock do parâmetro e termina em SC024.
     12. (0019) Duas solicitações simultâneas de reajuste com escopo sobreposto: a segunda espera o advisory lock e termina em SC024. Sobra um lote só em aberto.
+    13. (0020) Um titular é suspenso por `definir_status_usuario_central` enquanto o outro revoga a própria `conceder_permissao`: a revogação espera o lock do catálogo e termina em SC023. Sobra um titular efetivo.
 
     Na 0019, os cenários 2 a 6 passaram a usar a assinatura nova (percentual) e solicitantes com `solicitar_reajuste_taxa`.
 
     No fim, o script confere que não há vigência sobreposta em `regra_taxa`, `politica_garantia` nem `parametro_valor`.
 18. **`analisar_cadastros` ainda não é imposta pelo banco** (0016). A aprovação de parceiro (`parceiro.aprovado_por`) e a revisão de documento (`parceiro_documento.revisado_por`) são feitas pelo app por DML, e o banco só exige perfil `central` (SC001). A permissão vale apenas na API da Central até essas ações virarem funções do `safetycar_central`, numa migração futura.
+    - **Risco associado (R6 do plano da 0020):** o app consegue gravar o id de um usuário da Central em `parceiro.aprovado_por`, `parceiro_documento.revisado_por`, `bloqueio.criado_por` e `nivel_verificacao_historico.concedido_por`, forjando uma decisão "da Central". **Fica para uma migração própria** (decidido ao planejar a 0020): essas decisões passam a ser funções do `safetycar_central`, com `analisar_cadastros` e auditoria, e o app perde a escrita direta nessas colunas.
 19. **Exceção à regra "parametrização só por migração"** (desenho de 23/11/2026; aplicada na 0017 e na 0018). Os valores dos parâmetros da 0018 (`limite_variacao_reajuste`, `alerta_documento_dias`; o catálogo continua só por migração) e a definição da primeira tarifa (0017) passam a ser alterados pela Central, pelas funções do `safetycar_central`, com permissão, auditoria e, quando sensíveis, aprovação de outro operador. Fica como o reajuste da 0015. O app continua sem escrever em parametrização, e as demais tabelas (níveis, garantia, provedores) continuam só por migração.
 20. **Não incluir dado pessoal no campo motivo.** O motivo é texto livre e vai para as tabelas de histórico e para a auditoria (`depois ->> 'motivo'`). A interface da Central deve avisar isso, e a API não deve preencher o motivo com nome, e-mail, CPF ou telefone. Os testes conferem que não há e-mail na auditoria das permissões.
-21. **Endurecimento de permissões (0020, a planejar).** O `safetycar_app` pode fazer UPDATE em `usuario.status` (0007) e, com isso, suspender o último titular sem passar pela SC023. Também tem INSERT em `auditoria`, então pode gravar eventos `central_*` falsos. Isso fica fora das 0016 a 0019, e o plano da 0020 vem antes de qualquer SQL.
+21. ~~Endurecimento de permissões: o app alterando `usuario.status` e gravando eventos `central_*`.~~ **Resolvida na 0020** ([Endurecimento](#endurecimento-de-permissões-0020)): o app não cria nem altera usuário da Central (SC029), não grava ação reservada (SC030) e não lê a auditoria. A SC023 vale também no status, na exclusão e no perfil. Ficam com migração própria as pendências 16 (REVOKE geral de EXECUTE) e 18 (decisões da Central gravadas pelo app).

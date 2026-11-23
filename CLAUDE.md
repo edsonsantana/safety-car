@@ -42,7 +42,7 @@ Plataforma de assistência rodoviária conectada (guincho, mecânica e serviços
   - Códigos mantidos: `conceder_permissao` = "administrar permissões"; `aprovar_reajuste_taxa` = "aprovar tarifa". Novos: `solicitar_reajuste_taxa` (exigida só a partir da 0019), `analisar_cadastros` (ainda **não** imposta pelo banco) e `administrar_parametros`. Coluna `sensivel`, informativa para a API exigir OTP; o banco não valida 2FA.
   - Último titular efetivo de `conceder_permissao` não é revogado nem desativado (SC023), por função ou escrita direta. A revogação manual do migrator continua liberada (recuperação).
   - Eventos `central_permissao_concedida`, `central_permissao_revogada` e `central_acesso` (`registrar_acesso_central`); visões `vw_operador_permissao` e `vw_operador_central` (último acesso), só para a Central.
-  - Fica para a 0020 (planejar antes de qualquer SQL): o app altera `usuario.status` e insere em `auditoria`.
+  - O risco de o app alterar `usuario.status` e inserir eventos `central_*` foi resolvido na 0020.
 - **Regiões e primeira tarifa** (migração `0017`, testes `21`, cenários 8 e 9 de concorrência):
   - `regra_taxa` segue por UF ou nacional; `regiao`/`regiao_uf` (IBGE) são só atalho de escopo, expandido em UFs.
   - Primeira tarifa por **lote de definição** (itens em jsonb, cada um com exatamente um alvo: `uf`, `regiao` ou `nacional: true`). Pede quem tem `solicitar_reajuste_taxa`; aprova ou rejeita, numa só decisão, quem tem `aprovar_reajuste_taxa` e não é o solicitante. Simula quem tem uma das duas.
@@ -57,6 +57,13 @@ Plataforma de assistência rodoviária conectada (guincho, mecânica e serviços
   - Limite de variação: o parâmetro `limite_variacao_reajuste` é **copiado no pedido** (`limite_bp_na_criacao`); acima dele, exige `motivo_excecao` (SC025). A aprovação usa o limite copiado, não o de agora.
   - Solicitar exige `solicitar_reajuste_taxa`; simular, ela ou `aprovar_reajuste_taxa`. Quem pede nunca aprova nem rejeita (sem exceção de autoaprovação; CHECK no catálogo).
   - Sem dois lotes em aberto com regra vigente em comum (SC024). Região como atalho de escopo (`regioes`). `vw_reajuste_taxa_regra` mostra valor base e valor novo.
+- **Endurecimento de permissões** (migração `0020`, testes `24`, cenário de concorrência 13; teste 13 e teste de integração da API ajustados):
+  - O app (`session_user = safetycar_app`) não cria usuário central, não promove ninguém a central e, num usuário central, só altera `ultimo_login_em` (SC029). Fecha a tomada de identidade pela troca de `keycloak_sub`.
+  - Último titular de `conceder_permissao` também não sai de `ativo`, não é excluído e não muda de perfil, por qualquer escritor (SC023).
+  - Central: `cadastrar_usuario_central` (e-mail só em `usuario`, nunca na auditoria), `definir_status_usuario_central` e `registrar_mfa_central`. `mfa_ativado_em` é espelho: **a Central não decide 2FA por ele**, e sim pelo OTP/`acr` do token.
+  - Auditoria: o app perde o SELECT e não grava direto `central_`, `migrator_` nem `parametrizacao_` (SC030; as linhas de trigger, com `pg_trigger_depth() > 1`, continuam). `vw_operador_central` só conta acesso gravado pela Central ou pelo migrator.
+  - Testes: `_app.sql` com `-- @como_app` prepara dados como postgres antes de virar o app.
+  - Com migração própria, ainda a planejar: REVOKE geral de EXECUTE (pendência 16) e decisões da Central gravadas pelo app (pendência 18).
 - **Keycloak de desenvolvimento** no `docker-compose.yml` (26.8.2, `start-dev`, só em 127.0.0.1), com banco próprio (`keycloak-db`). O realm `safetycar-dev` é versionado em `keycloak/realms/safetycar-dev.json`, **sem usuários, senhas nem segredos**. O client `safetycar-web` é público, com PKCE S256 e `aud=safetycar-api`. Detalhes em `docs/KEYCLOAK.md`.
 - **Esqueleto do backend** em `apps/api` (Node 24 + TypeScript estrito; Fastify, `pg`, Zod, `jose` e pino-pretty em dev; testes com `node:test`). Rotas: `GET /saude` (SELECT 1) e `GET /me` (ver Login abaixo).
   - Conecta só como `safetycar_app`: a configuração recusa `safetycar_migrator` e `postgres`, e a subida recusa papel superusuário ou com CREATE no schema `public`.
@@ -80,7 +87,7 @@ bash db/scripts/criar_papeis.sh --sincronizar       # ALTER ROLE só nos papéis
 bash db/scripts/testar_senhas.sh                    # à parte: testa os dois modos num contêiner descartável, removido no fim
 bash db/scripts/migrar.sh                           # migrações no banco safetycar
 bash db/scripts/testar.sh                           # testes do banco (recria safetycar_teste)
-bash db/scripts/testar_concorrencia.sh              # à parte: duas sessões simultâneas (0014 a 0019) em safetycar_conc, apagado no fim
+bash db/scripts/testar_concorrencia.sh              # à parte: duas sessões simultâneas (0014 a 0020) em safetycar_conc, apagado no fim
 bash db/scripts/primeiro_administrador.sh --email … --sub … [--simular]  # 1º administrador da Central, uma vez por ambiente
 bash db/scripts/testar_primeiro_administrador.sh    # à parte: testa o script acima em bancos descartáveis, apagados no fim
 node --test keycloak/tests/tema.test.mjs            # estrutura e contraste do tema de login

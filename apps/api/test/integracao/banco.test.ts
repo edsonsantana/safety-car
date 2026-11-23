@@ -61,6 +61,7 @@ describe('banco real', () => {
 
   test('consultarAcesso lê só perfil e status pelo keycloak_sub (transação desfeita)', async () => {
     // Linhas fictícias; o ROLLBACK as apaga (o safetycar_app não tem DELETE em usuario).
+    // Perfil parceiro, e não central: desde a migração 0020, o app não cria usuário da Central (SC029).
     const cliente = await pool.connect();
     try {
       await cliente.query('BEGIN');
@@ -68,12 +69,12 @@ describe('banco real', () => {
       const subPendente = '00000000-0000-4000-8000-0000000000a2';
       await cliente.query(
         `INSERT INTO usuario (keycloak_sub, email, perfil, status) VALUES
-           ($1, 'teste-me-ativo@exemplo.invalid', 'central', 'ativo'),
+           ($1, 'teste-me-ativo@exemplo.invalid', 'parceiro', 'ativo'),
            ($2, 'teste-me-pendente@exemplo.invalid', 'tomador', 'pendente')`,
         [subAtivo, subPendente],
       );
       assert.deepEqual(await consultarAcesso(cliente, subAtivo), {
-        perfil: 'central',
+        perfil: 'parceiro',
         status: 'ativo',
       });
       assert.deepEqual(await consultarAcesso(cliente, subPendente), {
