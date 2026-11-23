@@ -3,7 +3,7 @@
 SELECT pg_temp.confere(current_user = 'safetycar_app', 'teste conectado como safetycar_app');
 
 -- ---------- Leitura permitida ----------
-SELECT pg_temp.confere((SELECT count(*) = 2 FROM permissao_central), 'app lê o catálogo de permissões');
+SELECT pg_temp.confere((SELECT count(*) >= 2 FROM permissao_central), 'app lê o catálogo de permissões');
 
 -- ---------- Sem consulta de permissão nem leitura de quem são os operadores ----------
 SELECT pg_temp.espera_erro($$SELECT operador_tem_permissao(gen_random_uuid(), 'aprovar_reajuste_taxa')$$,

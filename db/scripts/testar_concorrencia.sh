@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Testes de concorrência da 0014 e da 0015 com DUAS SESSÕES SIMULTÂNEAS de verdade.
+# Testes de concorrência da 0014, da 0015 e da 0016 com DUAS SESSÕES SIMULTÂNEAS de verdade.
 # Fora da suíte padrão (o testar.sh roda uma sessão por arquivo e não cobre isto).
 #
 #   bash db/scripts/testar_concorrencia.sh
@@ -348,6 +348,34 @@ if confere_sessoes SC013; then
      AND (SELECT situacao = 'solicitado' FROM vw_reajuste_taxa WHERE id = '$L6')"
 else
   falhou "6: $MOTIVO"
+fi
+
+# ---------------------------------------------------------------------------------------------
+# 0016: último titular de conceder_permissao. Aqui os titulares são U3 (inicial, 1b) e U1.
+EFETIVOS_CONCEDER="SELECT count(*) FROM vw_permissao_vigente WHERE permissao_codigo = 'conceder_permissao' AND efetiva"
+
+echo "== Cenário 7a: os dois últimos titulares revogam a própria conceder_permissao ao mesmo tempo"
+corrida safetycar_central "SELECT revogar_permissao('$U3', '$U3', 'conceder_permissao', '[TESTE] conc 7a: A');" \
+        safetycar_central "SELECT revogar_permissao('$U1', '$U1', 'conceder_permissao', '[TESTE] conc 7a: B');"
+if confere_sessoes SC023; then
+  ok "U3 revogou; U1 esperou ($ESPERA_B) e terminou em SC023, não em 40P01"
+  confere "sobra um titular efetivo, U1" \
+    "($EFETIVOS_CONCEDER) = 1 AND EXISTS (SELECT 1 FROM vw_permissao_vigente WHERE permissao_codigo = 'conceder_permissao' AND operador_id = '$U1' AND efetiva)"
+else
+  falhou "7a: $MOTIVO"
+fi
+
+echo "== Cenário 7b: desativação de um titular e autorrevogação do outro, ao mesmo tempo"
+sql >/dev/null -c "SELECT conceder_permissao('$U1', '$OP', 'conceder_permissao', '[TESTE] conc 7b: segundo titular')"
+corrida safetycar_central "SELECT definir_operador_ativo('$U1', '$OP', false, '[TESTE] conc 7b: A');" \
+        safetycar_central "SELECT revogar_permissao('$U1', '$U1', 'conceder_permissao', '[TESTE] conc 7b: B');"
+if confere_sessoes SC023; then
+  ok "OP foi desativado; a revogação de U1 esperou ($ESPERA_B) e terminou em SC023"
+  confere "U1 segue como único titular efetivo e OP está inativo" \
+    "($EFETIVOS_CONCEDER) = 1 AND (SELECT NOT ativo FROM operador_central WHERE usuario_id = '$OP')
+     AND EXISTS (SELECT 1 FROM vw_permissao_vigente WHERE permissao_codigo = 'conceder_permissao' AND operador_id = '$U1' AND efetiva)"
+else
+  falhou "7b: $MOTIVO"
 fi
 
 # ---------------------------------------------------------------------------------------------

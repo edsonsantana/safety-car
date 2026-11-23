@@ -38,6 +38,11 @@ Plataforma de assistência rodoviária conectada (guincho, mecânica e serviços
   - Recusas: "a definir" (SC013), escopo vazio (SC019), lote decidido (SC020), regra futura (SC021), resultado inválido ou nada a alterar (SC022). Valor igual entra como nova versão.
   - O chamado (fase seguinte) guardará o `regra_taxa.id` de cada componente e os valores usados; a regra antiga continua consultável por data e por id.
   - Fora do escopo: tela de administração e busca automática de índice (IPCA).
+- **Permissões da Central ampliadas** (migração `0016`, testes `20`, cenários 7a e 7b de concorrência), primeira etapa do desenho `docs/CENTRAL_PERMISSOES_TARIFAS_PARAMETROS.md` (0016 a 0019; o que já existia prevalece):
+  - Códigos mantidos: `conceder_permissao` = "administrar permissões"; `aprovar_reajuste_taxa` = "aprovar tarifa". Novos: `solicitar_reajuste_taxa` (exigida só a partir da 0019), `analisar_cadastros` (ainda **não** imposta pelo banco) e `administrar_parametros`. Coluna `sensivel`, informativa para a API exigir OTP; o banco não valida 2FA.
+  - Último titular efetivo de `conceder_permissao` não é revogado nem desativado (SC023), por função ou escrita direta. A revogação manual do migrator continua liberada (recuperação).
+  - Eventos `central_permissao_concedida`, `central_permissao_revogada` e `central_acesso` (`registrar_acesso_central`); visões `vw_operador_permissao` e `vw_operador_central` (último acesso), só para a Central.
+  - Fica para a 0020 (planejar antes de qualquer SQL): o app altera `usuario.status` e insere em `auditoria`.
 - **Keycloak de desenvolvimento** no `docker-compose.yml` (26.8.2, `start-dev`, só em 127.0.0.1), com banco próprio (`keycloak-db`). O realm `safetycar-dev` é versionado em `keycloak/realms/safetycar-dev.json`, **sem usuários, senhas nem segredos**. O client `safetycar-web` é público, com PKCE S256 e `aud=safetycar-api`. Detalhes em `docs/KEYCLOAK.md`.
 - **Esqueleto do backend** em `apps/api` (Node 24 + TypeScript estrito; Fastify, `pg`, Zod, `jose` e pino-pretty em dev; testes com `node:test`). Rotas: `GET /saude` (SELECT 1) e `GET /me` (ver Login abaixo).
   - Conecta só como `safetycar_app`: a configuração recusa `safetycar_migrator` e `postgres`, e a subida recusa papel superusuário ou com CREATE no schema `public`.
@@ -61,7 +66,7 @@ bash db/scripts/criar_papeis.sh --sincronizar       # ALTER ROLE só nos papéis
 bash db/scripts/testar_senhas.sh                    # à parte: testa os dois modos num contêiner descartável, removido no fim
 bash db/scripts/migrar.sh                           # migrações no banco safetycar
 bash db/scripts/testar.sh                           # testes do banco (recria safetycar_teste)
-bash db/scripts/testar_concorrencia.sh              # à parte: duas sessões simultâneas (0014 e 0015) em safetycar_conc, apagado no fim
+bash db/scripts/testar_concorrencia.sh              # à parte: duas sessões simultâneas (0014 a 0016) em safetycar_conc, apagado no fim
 bash db/scripts/primeiro_administrador.sh --email … --sub … [--simular]  # 1º administrador da Central, uma vez por ambiente
 bash db/scripts/testar_primeiro_administrador.sh    # à parte: testa o script acima em bancos descartáveis, apagados no fim
 node --test keycloak/tests/tema.test.mjs            # estrutura e contraste do tema de login

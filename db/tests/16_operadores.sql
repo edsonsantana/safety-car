@@ -13,8 +13,8 @@ $f$;
 
 -- ---------- Catálogo ----------
 SELECT pg_temp.confere(
-  (SELECT array_agg(codigo ORDER BY codigo) = '{aprovar_reajuste_taxa,conceder_permissao}' FROM permissao_central),
-  'catálogo com conceder_permissao e aprovar_reajuste_taxa');
+  (SELECT array_agg(codigo ORDER BY codigo) @> '{aprovar_reajuste_taxa,conceder_permissao}' FROM permissao_central),
+  'catálogo com conceder_permissao e aprovar_reajuste_taxa (a 0016 acrescenta outras; ver 20_permissoes.sql)');
 SELECT pg_temp.confere(
   (SELECT NOT permite_autoaprovacao FROM permissao_central WHERE codigo = 'aprovar_reajuste_taxa'),
   'aprovar_reajuste_taxa começa sem autoaprovação');

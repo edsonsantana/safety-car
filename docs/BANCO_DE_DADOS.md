@@ -2,7 +2,7 @@
 
 PostgreSQL 16 + PostGIS 3.6, migrações em SQL puro executadas com `psql`. A API (`apps/api`) conecta como `safetycar_app` e usa SQL puro parametrizado, sem ORM.
 
-Este documento cobre a **base inicial** (identidade, tomador, parceiro tipificado, fundação geoespacial e antifraude base) e a **parametrização do modelo de negócio** (0008 a 0013: CPF obrigatório, níveis de verificação, taxas, garantia e provedores de pagamento, com valores a definir), além de **operadores e permissões da Central** (0014) e do **reajuste de taxas em lote** com solicitação e aprovação (0015). O modelo de referência original é `docs/safety_car_modelo_dados_v1.sql`; as diferenças estão em [Decisões de modelagem](#decisões-de-modelagem).
+Este documento cobre a **base inicial** (identidade, tomador, parceiro tipificado, fundação geoespacial e antifraude base) e a **parametrização do modelo de negócio** (0008 a 0013: CPF obrigatório, níveis de verificação, taxas, garantia e provedores de pagamento, com valores a definir), além de **operadores e permissões da Central** (0014, ampliada na 0016) e do **reajuste de taxas em lote** com solicitação e aprovação (0015). O desenho aprovado em 23/11/2026 para permissões, tarifas e parâmetros está em `docs/CENTRAL_PERMISSOES_TARIFAS_PARAMETROS.md`; a conciliação com o que já existia está nas seções da 0016 em diante. O modelo de referência original é `docs/safety_car_modelo_dados_v1.sql`; as diferenças estão em [Decisões de modelagem](#decisões-de-modelagem).
 
 ## Sumário
 1. [Como subir, migrar e testar](#como-subir-migrar-e-testar)
@@ -32,7 +32,7 @@ bash db/scripts/criar_papeis.sh --sincronizar  # alinha com o .env a senha dos p
 bash db/scripts/testar_senhas.sh  # à parte: testa os dois modos acima num contêiner descartável
 bash db/scripts/migrar.sh     # aplica as migrações pendentes no banco "safetycar"
 bash db/scripts/testar.sh     # recria "safetycar_teste" do zero, migra duas vezes e roda db/tests
-bash db/scripts/testar_concorrencia.sh  # à parte: duas sessões simultâneas em "safetycar_conc" (0014 e 0015)
+bash db/scripts/testar_concorrencia.sh  # à parte: duas sessões simultâneas em "safetycar_conc" (0014 a 0016)
 bash db/scripts/primeiro_administrador.sh --email … --sub … [--simular]  # uma vez por ambiente (ver 0014)
 bash db/scripts/testar_primeiro_administrador.sh  # à parte: testa o script acima em bancos descartáveis
 ```
@@ -91,6 +91,7 @@ Imagem fixada: `postgis/postgis:16-3.6`, digest `sha256:d07ce3f06f657b6516c75114
 | `0013_nivel_zero.sql` | nível 0 "cadastro incompleto": catálogo de 0 a 3, cadastro nasce no 0, CHECK `>= 1` em requisito, nível mínimo e garantia, origem `migracao` no histórico, `cumpre_nivel_minimo` e `politica_garantia_vigente` redefinidas; rebaixa ao 0 quem estava no 1 sem histórico |
 | `0014_operadores_permissoes.sql` | papel `safetycar_central` (conferido, não criado); `auditoria.papel_bd` = `session_user`; `permissao_central` (catálogo), `operador_central`, `permissao_concessao` e `permissao_revogacao` (somente inserção), `vw_permissao_vigente`; `operador_tem_permissao()`; funções da Central (`cadastrar_operador`, `definir_operador_ativo`, `conceder_permissao`, `revogar_permissao`) e manuais do migrator (`conceder_permissao_inicial`, `revogar_permissao_manual`) |
 | `0015_reajuste_taxa.sql` | `reajuste_taxa` (lote) e `reajuste_taxa_decisao` (somente inserção), `vw_reajuste_taxa`; `regra_taxa.reajuste_id` e `regra_taxa.regra_origem_id`; `arredondar_centavos()`, `reajuste_calculo()`; funções da Central `simular_reajuste_taxa` (por parâmetros e por lote), `solicitar_reajuste_taxa`, `aprovar_reajuste_taxa`, `rejeitar_reajuste_taxa`, `cancelar_reajuste_taxa` |
+| `0016_permissoes_central.sql` | `permissao_central.sensivel` e as permissões `solicitar_reajuste_taxa`, `analisar_cadastros` e `administrar_parametros`; regra do último titular de `conceder_permissao` (SC023) na revogação e na desativação; eventos `central_permissao_concedida`, `central_permissao_revogada` e `central_acesso`; `registrar_acesso_central()`; `vw_operador_permissao` e `vw_operador_central` |
 
 Privilégios do `safetycar_app` (0007):
 
@@ -117,6 +118,7 @@ Privilégios concedidos nas migrações seguintes (cada uma declara os seus):
 | `permissao_central` | SELECT (catálogo, sem dado de pessoa) | 0014 |
 | `operador_tem_permissao` e demais funções da 0014 | **nenhum** (sem EXECUTE; ver [decisões](#decisões-de-modelagem)) | 0014 |
 | `reajuste_taxa`, `reajuste_taxa_decisao`, `vw_reajuste_taxa` e todas as funções da 0015 | **nenhum**: os lotes identificam operadores; o app continua só lendo `regra_taxa`, inclusive as colunas novas | 0015 |
+| `vw_operador_permissao`, `vw_operador_central` e todas as funções da 0016 | **nenhum**; o app continua lendo só `permissao_central` (agora com `sensivel`) | 0016 |
 
 Privilégios do `safetycar_central` (0014):
 
@@ -127,7 +129,11 @@ Privilégios do `safetycar_central` (0014):
 | `operador_tem_permissao`, `cadastrar_operador`, `definir_operador_ativo`, `conceder_permissao`, `revogar_permissao` | EXECUTE |
 | `regra_taxa`, `reajuste_taxa`, `reajuste_taxa_decisao`, `vw_reajuste_taxa` (0015) | SELECT |
 | `simular_reajuste_taxa` (as duas formas), `solicitar_reajuste_taxa`, `aprovar_reajuste_taxa`, `rejeitar_reajuste_taxa`, `cancelar_reajuste_taxa` (0015) | EXECUTE |
+| `vw_operador_permissao`, `vw_operador_central` (0016) | SELECT |
+| `registrar_acesso_central` (0016) | EXECUTE |
 | demais tabelas (inclusive `usuario` e `auditoria`) | nenhum |
+
+As funções da 0016 redefinidas por `CREATE OR REPLACE` (`definir_operador_ativo`, `conceder_permissao`, `revogar_permissao`) mantêm a assinatura e os GRANTs da 0014. As auxiliares `existe_outro_titular_conceder` e `exige_outro_titular_conceder` não têm GRANT para ninguém.
 
 `conceder_permissao_inicial` e `revogar_permissao_manual` não têm GRANT: só o dono (`safetycar_migrator`) e o superusuário as executam. Todas as funções da 0014 e da 0015 que podem ser chamadas têm `REVOKE … FROM PUBLIC`. As auxiliares internas da 0015 (`arredondar_centavos`, `exige_operador_ativo`, `reajuste_validar`, `reajuste_calculo`, `reajuste_exigir_aplicavel`) não têm GRANT para ninguém: rodam dentro das funções da Central.
 
@@ -620,10 +626,21 @@ Fora desta fase: pagamento efetivo, pré-autorização real, repasse e integraç
 
 | Coluna | Tipo | Finalidade |
 |---|---|---|
-| codigo | text PK | `conceder_permissao` (gerencia operadores e permissões) e `aprovar_reajuste_taxa` (0015). Extensível por migração (ex.: `aprovar_bloqueio`, `aprovar_nivel_manual`) |
+| codigo | text PK | ver a tabela abaixo. Extensível por migração (ex.: `aprovar_bloqueio`, `aprovar_nivel_manual`) |
 | nome, descricao | text | rótulo e explicação |
 | ativo | boolean | permissão inativa não vale para ninguém e não é concedida |
-| permite_autoaprovacao | boolean | exceção à regra "quem solicita não aprova o próprio pedido"; **desligada** em `aprovar_reajuste_taxa`; CHECK: nunca ligada em `conceder_permissao` |
+| permite_autoaprovacao | boolean | exceção à regra "quem solicita não aprova o próprio pedido"; **desligada** em todas; CHECK: nunca ligada em `conceder_permissao` |
+| sensivel | boolean (0016) | informativa para a API exigir OTP na sessão (o banco **não** valida 2FA); CHECK: sempre ligada em `conceder_permissao` |
+
+Catálogo (conciliado com o desenho de 23/11/2026; os códigos da 0014 foram mantidos):
+
+| codigo | Nome no desenho | Sensível | Situação |
+|---|---|---|---|
+| `conceder_permissao` | administrar_permissoes | sim | cadastra, ativa e desativa operadores; concede e revoga permissões (0014). Rótulo "Administrar permissões" desde a 0016 |
+| `aprovar_reajuste_taxa` | aprovar_tarifa | sim | aprova e rejeita reajustes (0015) |
+| `solicitar_reajuste_taxa` | solicitar_tarifa | não | criada na 0016; **só passa a ser exigida na 0019**. Até lá, qualquer operador ativo solicita (0015) |
+| `analisar_cadastros` | igual | não | criada na 0016; **ainda não imposta pelo banco** (ver [pendências](#pendências-não-decididas)) |
+| `administrar_parametros` | igual | sim | criada na 0016; usada pelos parâmetros (0018) |
 
 **operador_central**: quem opera a Central.
 
@@ -660,8 +677,19 @@ Não é excluído (só desativado, SC010). O usuário que é operador não troca
 - concessão repetida enquanto vigente: SC018;
 - concessão inicial: só de `conceder_permissao` (23514) e só quando **não existe nenhuma** concessão de `conceder_permissao` sem revogação (SC018);
 - revogar a própria permissão é permitido, porque só reduz poder; revogar a de outro exige `conceder_permissao` (SC016); revogar o que não está vigente: SC018.
+- **último titular** (0016): revogar (origem `operador`) ou desativar o último operador com `conceder_permissao` **efetiva** é recusado (SC023), inclusive por INSERT ou UPDATE direto. Um titular que já não é efetivo (operador inativo ou usuário não ativo) não conta como "outro titular", e removê-lo não é barrado. A **revogação manual** do migrator continua liberada: é o caminho de recuperação. A regra vale só para `conceder_permissao`; o último aprovador de reajuste, por exemplo, pode abdicar.
 
 **Locks**: a concessão trava a linha do operador (`FOR UPDATE`) e a linha do catálogo, já no modo final: `FOR UPDATE` na inicial e `FOR SHARE` nas demais. Nunca `FOR SHARE` seguido de `FOR UPDATE` na mesma linha, para que duas iniciais simultâneas terminem em SC018, e não em deadlock (40P01). A revogação trava a concessão, e a `UNIQUE (concessao_id)` é a última barreira.
+- Desde a 0016, `revogar_permissao` (de `conceder_permissao`) e `definir_operador_ativo` (ao desativar) travam **antes** a linha `conceder_permissao` do catálogo (`FOR UPDATE`), na mesma ordem da concessão (catálogo e depois operador). Duas remoções simultâneas dos dois últimos titulares ficam em série, e a segunda termina em SC023 (cenários 7a e 7b do `testar_concorrencia.sh`). Um INSERT ou UPDATE direto, fora das funções, trava na ordem inversa: numa corrida pode dar 40P01, mas nunca deixa a Central sem titular.
+
+**Eventos de auditoria com nome próprio** (0016), gravados pelas funções na mesma transação, além da linha automática `parametrizacao_insert`. Só identificadores internos, vigência antes e depois e o motivo:
+- `central_permissao_concedida` (`entidade = permissao_concessao`);
+- `central_permissao_revogada` (`entidade = permissao_revogacao`);
+- `central_acesso` (`entidade = operador_central`), por `registrar_acesso_central(ator)`, que a API chama uma vez por início de sessão. Exige operador ativo (SC016).
+
+Se a gravação na auditoria falhar, a operação inteira é desfeita (há teste). A concessão inicial e a revogação manual continuam só com a auditoria automática (papel `safetycar_migrator`, sem ator).
+
+**Visões da Central** (0016): `vw_operador_permissao` (`security_invoker`) traz o histórico de concessões com a revogação, `vigente`, `efetiva` e `sensivel`. `vw_operador_central` traz operador, `ativo` e `ultimo_acesso_em`. Esta segunda visão **não** é `security_invoker`, de propósito: a Central não lê a auditoria, e a visão expõe só o instante do último `central_acesso`.
 
 **Funções da Central** (SECURITY DEFINER, `SET search_path = public, pg_temp`, EXECUTE só para o `safetycar_central`): `cadastrar_operador(ator, usuario, motivo)`, `definir_operador_ativo(ator, operador, ativo, motivo)`, `conceder_permissao(ator, operador, permissao, motivo)`, `revogar_permissao(ator, operador, permissao, motivo)`.
 - Ninguém cadastra, ativa ou desativa a si mesmo (SC017).
@@ -799,6 +827,7 @@ As regras ficam no banco para valer para qualquer cliente que venha a existir. E
 | SC020 | lote de reajuste já decidido (aprovado, rejeitado ou cancelado) | `aprovar_`, `rejeitar_` e `cancelar_reajuste_taxa()` |
 | SC021 | regra futura agendada no escopo, ou regra vigente que termina antes do início | `reajuste_exigir_aplicavel()` |
 | SC022 | resultado negativo, zerado a partir de um valor maior que zero, acima de 10000 pb, ou nada a alterar | `reajuste_exigir_aplicavel()` |
+| SC023 | revogar (origem `operador`) ou desativar o último titular efetivo de `conceder_permissao` (0016) | `exige_outro_titular_conceder()`, chamada por `permissao_revogacao_validar()` e `operador_ultimo_titular()` |
 | SC016, SC017, SC012, SC013 | também no reajuste: ator sem permissão ou operador inativo; autoaprovação desligada; início no passado; regra "a definir" no escopo | funções da 0015 |
 | 22023 | parâmetro inválido em `parceiros_proximos` (lat, lng, raio, serviço) | `parceiros_proximos()` |
 
@@ -956,4 +985,10 @@ Registradas aqui; nenhuma foi decidida nesta fase.
     5. Duas concessões simultâneas da mesma permissão ao mesmo operador, por dois detentores de `conceder_permissao`: a segunda espera o `FOR UPDATE` no operador e termina em SC018.
     6. Uma regra "a definir" entra no escopo, por uma sessão do migrator segurando o advisory lock, enquanto a aprovação espera: a aprovação termina em SC013, nenhuma regra é alterada e o lote continua `solicitado`.
 
+    7. (0016) Os dois últimos titulares de `conceder_permissao` revogam a própria permissão ao mesmo tempo (7a), ou um titular é desativado enquanto o outro revoga a própria (7b): a segunda operação espera o lock do catálogo e termina em SC023, nunca em 40P01. Sobra um titular efetivo.
+
     No fim, o script confere que não há vigência sobreposta em `regra_taxa` nem em `politica_garantia`.
+18. **`analisar_cadastros` ainda não é imposta pelo banco** (0016). A aprovação de parceiro (`parceiro.aprovado_por`) e a revisão de documento (`parceiro_documento.revisado_por`) são feitas pelo app por DML, e o banco só exige perfil `central` (SC001). A permissão vale apenas na API da Central até essas ações virarem funções do `safetycar_central`, numa migração futura.
+19. **Exceção à regra "parametrização só por migração"** (desenho de 23/11/2026). Os parâmetros da 0018 (`limite_variacao_reajuste`, `alerta_documento_dias`) e a definição da primeira tarifa (0017) passam a ser alterados pela Central, pelas funções do `safetycar_central`, com permissão, auditoria e, quando sensíveis, aprovação de outro operador. Fica como o reajuste da 0015. O app continua sem escrever em parametrização, e as demais tabelas (níveis, garantia, provedores) continuam só por migração.
+20. **Não incluir dado pessoal no campo motivo.** O motivo é texto livre e vai para as tabelas de histórico e para a auditoria (`depois ->> 'motivo'`). A interface da Central deve avisar isso, e a API não deve preencher o motivo com nome, e-mail, CPF ou telefone. Os testes conferem que não há e-mail na auditoria das permissões.
+21. **Endurecimento de permissões (0020, a planejar).** O `safetycar_app` pode fazer UPDATE em `usuario.status` (0007) e, com isso, suspender o último titular sem passar pela SC023. Também tem INSERT em `auditoria`, então pode gravar eventos `central_*` falsos. Isso fica fora das 0016 a 0019, e o plano da 0020 vem antes de qualquer SQL.
