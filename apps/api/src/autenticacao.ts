@@ -7,12 +7,27 @@ declare module 'fastify' {
   interface FastifyRequest {
     /** sub do token do Keycloak (= usuario.keycloak_sub). Preenchido por exigeAutenticacao. */
     keycloakSub: string;
+    /** Claims de autenticação do token. Preenchido por exigeAutenticacao. */
+    identidade: Identidade | null;
   }
 }
 
-/** Valida um token de acesso e devolve o sub. */
+/**
+ * O que a API usa de um token já validado. Nada de e-mail, nome ou papéis do Keycloak.
+ * - acr: nível de autenticação ("Authentication Context Class Reference"); só texto.
+ * - amr: métodos usados (ex.: pwd, otp); lista vazia se ausente ou fora do formato.
+ * - authTime: auth_time em segundos desde a época (última autenticação interativa).
+ */
+export interface Identidade {
+  sub: string;
+  acr: string | undefined;
+  amr: readonly string[];
+  authTime: number | undefined;
+}
+
+/** Valida um token de acesso e devolve a identidade. */
 export interface VerificadorToken {
-  verificar(token: string): Promise<{ sub: string }>;
+  verificar(token: string): Promise<Identidade>;
 }
 
 /** Token recusado (assinatura, emissor, audiência, validade ou formato). */
@@ -55,14 +70,30 @@ function falhaAoObterChaves(erro: unknown): boolean {
   );
 }
 
+/** JWKS remoto do realm. Um só por processo: os verificadores do app e da Central o dividem. */
+export function criarChavesKeycloak(issuer: string): JWTVerifyGetKey {
+  return createRemoteJWKSet(new URL(`${issuer}/protocol/openid-connect/certs`), {
+    timeoutDuration: 2_000,
+    cooldownDuration: 30_000,
+    cacheMaxAge: 10 * 60_000,
+  });
+}
+
+/** Extrai acr, amr e auth_time sem confiar no formato: o que não for do tipo esperado é descartado. */
+function claimsDeAutenticacao(payload: Record<string, unknown>): Omit<Identidade, 'sub'> {
+  const { acr, amr, auth_time: authTime } = payload;
+  return {
+    acr: typeof acr === 'string' ? acr : undefined,
+    amr: Array.isArray(amr) ? amr.filter((m): m is string => typeof m === 'string') : [],
+    authTime:
+      typeof authTime === 'number' && Number.isSafeInteger(authTime) && authTime > 0
+        ? authTime
+        : undefined,
+  };
+}
+
 export function criarVerificadorKeycloak(opcoes: OpcoesVerificador): VerificadorToken {
-  const chaves =
-    opcoes.chaves ??
-    createRemoteJWKSet(new URL(`${opcoes.issuer}/protocol/openid-connect/certs`), {
-      timeoutDuration: 2_000,
-      cooldownDuration: 30_000,
-      cacheMaxAge: 10 * 60_000,
-    });
+  const chaves = opcoes.chaves ?? criarChavesKeycloak(opcoes.issuer);
 
   return {
     async verificar(token) {
@@ -90,7 +121,7 @@ export function criarVerificadorKeycloak(opcoes: OpcoesVerificador): Verificador
       if (sub === undefined || !FORMATO_UUID.test(sub)) {
         throw new TokenInvalido('sub ausente ou fora do formato uuid');
       }
-      return { sub };
+      return { sub, ...claimsDeAutenticacao(payload) };
     },
   };
 }
@@ -105,7 +136,7 @@ function tokenDoCabecalho(valor: string | undefined): string | undefined {
 }
 
 /**
- * preHandler que exige token válido do Keycloak e expõe request.keycloakSub.
+ * preHandler que exige token válido do Keycloak e expõe request.keycloakSub e request.identidade.
  * 401 sem token ou com token inválido; 503 se o Keycloak não fornece as chaves.
  * O sub e o token nunca vão para o log.
  */
@@ -118,7 +149,9 @@ export function exigeAutenticacao(verificador: VerificadorToken) {
       });
     }
     try {
-      req.keycloakSub = (await verificador.verificar(token)).sub;
+      const identidade = await verificador.verificar(token);
+      req.identidade = identidade;
+      req.keycloakSub = identidade.sub;
     } catch (erro) {
       if (erro instanceof TokenInvalido) {
         req.log.info({ motivo: erro.message }, 'token recusado');

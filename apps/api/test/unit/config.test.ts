@@ -5,7 +5,12 @@ import { carregarConfig, ErroConfiguracao } from '../../src/config.ts';
 
 const SENHA = 'senha-ficticia-de-teste';
 const ISSUER = 'http://localhost:8180/realms/safetycar-dev';
-const MINIMO = { API_DB_SENHA: SENHA, KEYCLOAK_ISSUER: ISSUER };
+const SENHA_CENTRAL = 'outra-senha-ficticia-de-teste';
+const MINIMO = {
+  API_DB_SENHA: SENHA,
+  KEYCLOAK_ISSUER: ISSUER,
+  API_CENTRAL_DB_SENHA: SENHA_CENTRAL,
+};
 
 function erroDe(ambiente: NodeJS.ProcessEnv): ErroConfiguracao {
   try {
@@ -31,6 +36,18 @@ describe('carregarConfig', () => {
         senha: SENHA,
       },
       keycloak: { issuer: ISSUER, audience: 'safetycar-api', azp: 'safetycar-web' },
+      central: {
+        banco: {
+          host: '127.0.0.1',
+          porta: 5432,
+          nome: 'safetycar',
+          usuario: 'safetycar_central',
+          senha: SENHA_CENTRAL,
+        },
+        azp: 'safetycar-central',
+        acr: '2',
+        otpRecenteSegundos: 600,
+      },
     });
   });
 
@@ -49,6 +66,44 @@ describe('carregarConfig', () => {
     });
   }
 
+  test('o pool do app não aceita o papel da Central', () => {
+    const erro = erroDe({ ...MINIMO, API_DB_USUARIO: 'safetycar_central' });
+    assert.match(erro.problemas[0] ?? '', /^API_DB_USUARIO: use o papel safetycar_app/);
+  });
+
+  for (const papel of ['safetycar_app', 'safetycar_migrator', 'postgres']) {
+    test(`o pool da Central recusa o papel ${papel}`, () => {
+      const erro = erroDe({ ...MINIMO, API_CENTRAL_DB_USUARIO: papel });
+      assert.deepEqual(erro.problemas, [
+        'API_CENTRAL_DB_USUARIO: use o papel safetycar_central; o pool da Central não aceita outro papel',
+      ]);
+    });
+  }
+
+  test('a senha da Central é obrigatória e não aparece na mensagem', () => {
+    const erro = erroDe({ ...MINIMO, API_CENTRAL_DB_SENHA: '' });
+    assert.deepEqual(erro.problemas, ['API_CENTRAL_DB_SENHA: obrigatória']);
+    const outro = erroDe({ ...MINIMO, API_PORTA: '0' });
+    assert.ok(!outro.message.includes(SENHA_CENTRAL));
+  });
+
+  test('o client da Central precisa ser diferente do client do app', () => {
+    const erro = erroDe({ ...MINIMO, KEYCLOAK_CENTRAL_CLIENT_ID: 'safetycar-web' });
+    assert.deepEqual(erro.problemas, [
+      'KEYCLOAK_CENTRAL_CLIENT_ID: deve ser diferente de KEYCLOAK_CLIENT_ID (token do app não entra na Central)',
+    ]);
+  });
+
+  test('client e acr da Central configuráveis', () => {
+    const config = carregarConfig({
+      ...MINIMO,
+      KEYCLOAK_CENTRAL_CLIENT_ID: 'central-x',
+      KEYCLOAK_CENTRAL_ACR: 'otp',
+    });
+    assert.equal(config.central.azp, 'central-x');
+    assert.equal(config.central.acr, 'otp');
+  });
+
   test('lista todos os problemas de uma vez e nunca mostra os valores', () => {
     const erro = erroDe({
       API_PORTA: '99999',
@@ -65,6 +120,7 @@ describe('carregarConfig', () => {
         'API_DB_USUARIO',
         'API_DB_SENHA',
         'KEYCLOAK_ISSUER',
+        'API_CENTRAL_DB_SENHA',
       ],
     );
     assert.doesNotMatch(erro.message, /99999|abc|verboso/);

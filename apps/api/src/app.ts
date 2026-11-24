@@ -4,6 +4,7 @@ import Fastify, { type FastifyInstance, LogController } from 'fastify';
 
 import type { VerificadorToken } from './autenticacao.ts';
 import type { Banco } from './banco.ts';
+import { type OpcoesCentral, registrarCentral } from './central/plugin.ts';
 import { registrarTratamentoErros } from './erros.ts';
 import { opcoesLog } from './log.ts';
 import { rotaMe } from './rotas/me.ts';
@@ -17,6 +18,8 @@ export interface OpcoesApp {
   destinoLog?: NodeJS.WritableStream;
   /** Tempo máximo do SELECT 1 do /saude. */
   tempoLimiteSaudeMs?: number;
+  /** Módulo da Central (/central). Ausente: as rotas não existem (testes de outras rotas). */
+  central?: OpcoesCentral;
 }
 
 /** Monta a aplicação sem abrir porta (os testes usam app.inject). */
@@ -50,9 +53,12 @@ export function construirApp(opcoes: OpcoesApp): FastifyInstance {
 
   registrarTratamentoErros(app);
   app.decorateRequest('keycloakSub', '');
+  app.decorateRequest('identidade', null);
+  app.decorateRequest('central', null);
 
   rotaSaude(app, opcoes.banco, opcoes.tempoLimiteSaudeMs ?? 2_000);
   rotaMe(app, opcoes.verificadorToken, opcoes.banco);
+  if (opcoes.central !== undefined) registrarCentral(app, opcoes.central);
 
   return app;
 }

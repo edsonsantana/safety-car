@@ -12,7 +12,8 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node --env-file-if-exists=../../.env dist/servidor.js",
     "test": "node --test \"test/unit/**/*.test.ts\"",
-    "test:integracao": "node --env-file-if-exists=../../.env --test --test-concurrency=1 \"test/integracao/**/*.test.ts\"",
+    "test:integracao": "node --env-file-if-exists=../../.env --test --test-concurrency=1 \"test/integracao/*.test.ts\"",
+    "test:integracao:central": "node --env-file-if-exists=../../.env --test --test-concurrency=1 \"test/integracao/central/*.test.ts\"",
     "lint": "tsc --noEmit && eslint . && prettier --check .",
     "formatar": "prettier --write ."
   },

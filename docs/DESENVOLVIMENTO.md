@@ -26,7 +26,7 @@ Sobe junto com o `docker compose up -d`. O console fica em http://localhost:8180
 
 ## API (`apps/api`)
 
-Node.js 24 + TypeScript (Fastify, `pg`, Zod e `jose`). Ela conecta ao banco **sempre** como `safetycar_app` e valida os tokens do Keycloak. Lê o `.env` da raiz e falha na subida, com a lista do que falta, se alguma variável estiver ausente ou inválida.
+Node.js 24 + TypeScript (Fastify, `pg`, Zod e `jose`). Ela valida os tokens do Keycloak e conecta ao banco com **dois pools separados**: o do app, **sempre** como `safetycar_app`, e o da Central (rotas `/central`), **sempre** como `safetycar_central`. Lê o `.env` da raiz e falha na subida, com a lista do que falta, se alguma variável estiver ausente ou inválida. Desde a etapa 2 da Central, `API_CENTRAL_DB_SENHA` é obrigatória.
 
 ```bash
 cd apps/api
@@ -36,6 +36,7 @@ npm test                      # testes unitários (não precisam de Docker)
 npm run test:integracao       # testes contra o banco real (docker compose up -d + migrações)
 npm run lint                  # tsc, ESLint e Prettier
 npm run build                 # gera dist/ (npm start roda o dist/)
+bash db/scripts/testar_api_central.sh  # (na raiz) integração da Central num banco descartável
 ```
 
 | Rota | Autenticação | Resposta |
@@ -46,6 +47,50 @@ npm run build                 # gera dist/ (npm start roda o dist/)
 - **Log:** JSON, uma linha por requisição (método, rota, status e duração). Não registra corpo, query, cabeçalhos, IP, token nem `keycloak_sub`. Chaves como `cpf`, `email` e `celular` são trocadas por `[removido]`.
 - **Erros:** formato único `{"erro":{"codigo","mensagem"}}`. Um `500` responde só com mensagem genérica.
 - **`npm audit`:** sem vulnerabilidades (conferido em 2026-11-21; o ReDoS do `picomatch` apontado antes já não aparece).
+
+### API da Central (`/central`)
+
+Módulo próprio em `apps/api/src/central`. Usa o pool do `safetycar_central` e aceita **só** tokens do client da Central. Hoje tem a base (etapa 2): as leituras e as escritas da Central entram nas etapas seguintes.
+
+| Variável | Padrão | Uso |
+|---|---|---|
+| `API_CENTRAL_DB_USUARIO` | `safetycar_central` | papel do pool da Central; qualquer outro é recusado. O pool do app, por sua vez, recusa o `safetycar_central` |
+| `API_CENTRAL_DB_SENHA` | (obrigatória) | mesmo valor de `SAFETYCAR_CENTRAL_PASSWORD` |
+| `KEYCLOAK_CENTRAL_CLIENT_ID` | `safetycar-central` | `azp` exigido em `/central`; precisa ser diferente de `KEYCLOAK_CLIENT_ID`. O client nasce na etapa do realm |
+| `KEYCLOAK_CENTRAL_ACR` | `2` | valor **exato** do `acr` de nível 2 (senha + OTP). Provisório até a conferência com token real |
+
+Na subida, a API confere que o pool da Central é o `safetycar_central`, sem superusuário nem DDL e sem SELECT em `usuario`, e que ele executa `ator_central`, isto é, que a migração 0021 foi aplicada.
+
+**Cada requisição** a `/central`:
+1. Token válido do client da Central. Sem token ou com token inválido, inclusive um token do `safetycar-web`: `401`.
+2. `acr` **exatamente igual** a `KEYCLOAK_CENTRAL_ACR`, e `auth_time` presente. Qualquer outro valor, inclusive `"1"` (só senha), `"0"` (SSO) e o número 2, recebe `401 segundo_fator_exigido` com `WWW-Authenticate: Bearer …, error="insufficient_user_authentication", acr_values="2"` (RFC 9470). Nesse caso o banco não é consultado.
+3. O ator vem do `sub` por `ator_central`, **nunca** do corpo nem da URL. Sem ator: `403 acesso_negado`, a mesma resposta para quem não tem registro, não é operador, está inativo, não tem a permissão ou recebeu SC016.
+4. Limite por ator.
+5. Nas ações sensíveis (★, nas próximas etapas): permissão da rota (o mesmo 403) e depois OTP recente, com `auth_time` de até 600 s. Fora disso, `401 otp_recente_exigido` com `max_age=600`.
+
+| Rota | Resposta |
+|---|---|
+| `GET /central/eu` | `200 {"permissoes":[{"codigo","sensivel"}],"otp":{"recente":true,"validoAte":"<ISO>"}}`. Com o OTP vencido, `recente:false` e `validoAte:null`. Sem id, `sub`, e-mail nem nome |
+| `POST /central/sessao` | `204`, sem corpo. Grava o `central_acesso` (último acesso). A repetição do mesmo login (mesmo `sub` e `auth_time`) é ignorada; se a gravação falhar, a próxima chamada grava |
+
+- **Erros do banco:** cada SQLSTATE vira uma resposta fixa, e a mensagem do PostgreSQL, que traz UUIDs e valores, nunca é repassada.
+  - `403`: SC016 e SC017.
+  - `409`: SC013, SC018, SC020, SC021, SC023, SC024, SC027, SC028, `23505`, `40P01`, `40001` e `55P03` (estes três como `tente_novamente`).
+  - `422`: SC012, SC019, SC022, SC025, SC026, `22023`, `22P02` e `23514`.
+  - `503`: `57014` e falha de conexão.
+  - `500`: qualquer outro, inclusive SC029 e SC030.
+  - O log registra **só o nome da função e o SQLSTATE**.
+- **Limite de requisições, em memória: vale para UMA instância.**
+  - Por ator, 120 leituras (GET) e 20 escritas por minuto. Por IP, 30 respostas `401`/`403` por minuto; atingido esse limite, o IP recebe `429` antes de o token ser lido.
+  - O `429` vem com `retry-after`.
+  - O IP é guardado como pseudônimo (HMAC com chave aleatória do processo) e nunca vai para o log.
+  - Com mais de uma instância, ou atrás de proxy (hoje `trustProxy` está desligado, e o IP visto é o do proxy), o limite precisa ir para um armazenamento compartilhado ou para o proxy.
+  - O registro de sessões do `POST /central/sessao` também fica em memória.
+- `cache-control: no-store` em toda resposta de `/central`. Sem CORS: em desenvolvimento, o Vite serve tudo na mesma origem.
+- **Testes de integração:** `bash db/scripts/testar_api_central.sh`.
+  - O script recria o banco descartável `safetycar_api_teste`, aplica as migrações, carrega a semente fictícia como migrator, roda `npm run test:integracao:central` e apaga o banco no fim.
+  - Ele recusa o `safetycar`, e o teste em Node recusa qualquer `API_DB_NOME` que não seja `safetycar_api_teste`.
+  - Precisa de `API_CENTRAL_DB_SENHA` no `.env`. Os tokens são assinados com chaves locais, sem Keycloak.
 
 ## Frontend (`apps/web`)
 
