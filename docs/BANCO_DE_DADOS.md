@@ -97,6 +97,7 @@ Imagem fixada: `postgis/postgis:16-3.6`, digest `sha256:d07ce3f06f657b6516c75114
 | `0018_parametros.sql` | `parametro` (catálogo), `parametro_valor` (histórico com vigência), `parametro_alteracao` e `parametro_alteracao_decisao` (somente inserção), `vw_parametro_alteracao`, `vw_parametro_vigente`; `parametro_vigente()`; carga `limite_variacao_reajuste` = 20 e `alerta_documento_dias` = 30; funções da Central `alterar_parametro`, `solicitar_`, `aprovar_`, `rejeitar_` e `cancelar_alteracao_parametro` |
 | `0019_reajuste_percentual_limite.sql` | reajuste só percentual e com início imediato; `reajuste_taxa.regioes`, `motivo_excecao` e `limite_bp_na_criacao`; CHECKs `NOT VALID` para os lotes novos; SC025 (limite) e SC024 (lote em aberto sobreposto) no trigger; `percentual_para_bp()`, `reajuste_ufs_escopo()`, `reajuste_exigir_sem_lote_aberto()`; assinaturas antigas de simular, solicitar e aprovar removidas e recriadas; rejeitar recusa o solicitante; `ck_permissao_reajuste_sem_auto`; `vw_reajuste_taxa` recriada e `vw_reajuste_taxa_regra` |
 | `0020_endurecimento_permissoes.sql` | `usuario_central_protegido()` (SC029 para o app e SC023 no status, na exclusão e no perfil do último titular); `auditoria_acao_reservada()` (SC030); SELECT do app em `auditoria` revogado; `vw_operador_central` só conta acesso gravado pela Central ou pelo migrator; funções da Central `cadastrar_usuario_central`, `definir_status_usuario_central` e `registrar_mfa_central` |
+| `0021_ator_central.sql` | `ator_central(keycloak_sub)`: traduz o `sub` do token no `usuario.id` do operador ativo da Central (NULL em qualquer outro caso), para a API da Central, que não lê `usuario` |
 
 Privilégios do `safetycar_app` (0007):
 
@@ -132,6 +133,7 @@ Privilégios concedidos nas migrações seguintes (cada uma declara os seus):
 | `auditoria` | **SELECT revogado** (mantém INSERT); ações com prefixo reservado recusadas (SC030) | 0020 |
 | `usuario` | os mesmos SELECT, INSERT e UPDATE, mas o trigger limita o app: não cria nem promove usuário central e, num usuário central, só altera `ultimo_login_em` (SC029) | 0020 |
 | funções da 0020 | **nenhum** | 0020 |
+| `ator_central` | **nenhum**: o app poderia sondar, `sub` a `sub`, quem é operador ativo | 0021 |
 
 Privilégios do `safetycar_central` (0014):
 
@@ -150,6 +152,7 @@ Privilégios do `safetycar_central` (0014):
 | `parametro_vigente`, `alterar_parametro`, `solicitar_alteracao_parametro`, `aprovar_alteracao_parametro`, `rejeitar_alteracao_parametro`, `cancelar_alteracao_parametro` (0018) | EXECUTE |
 | `vw_reajuste_taxa` (recriada) e `vw_reajuste_taxa_regra` (0019) | SELECT |
 | `cadastrar_usuario_central`, `definir_status_usuario_central`, `registrar_mfa_central` (0020) | EXECUTE |
+| `ator_central` (0021) | EXECUTE |
 | `simular_reajuste_taxa` (nova assinatura, por percentual), `solicitar_reajuste_taxa` e `aprovar_reajuste_taxa` (novas assinaturas) (0019); `simular_reajuste_taxa(ator, lote)`, `rejeitar_` e `cancelar_reajuste_taxa` foram redefinidas mantendo o GRANT | EXECUTE |
 | demais tabelas (inclusive `usuario` e `auditoria`) | nenhum |
 
@@ -986,6 +989,22 @@ Tomador e parceiro não mudam: o app continua criando e alterando esses usuário
 **Locks**: `definir_status_usuario_central` trava o catálogo e depois o usuário, como as demais funções da 0016. Um UPDATE direto em `usuario` trava na ordem inversa, como nas outras escritas diretas, e numa corrida pode dar 40P01, mas nunca deixa a Central sem titular (cenário 13).
 
 **API**: o teste de integração `apps/api/test/integracao/banco.test.ts` passou a usar um usuário `parceiro`, e não `central`, para conferir o mapeamento de perfil e status, porque o app não cria mais usuário da Central.
+
+### Ator da Central (0021)
+
+As funções da Central recebem o ator como `usuario.id` (`p_ator`), mas a API só conhece o `sub` do token do Keycloak (`usuario.keycloak_sub`). O `safetycar_central` não lê `usuario`, de propósito: e-mail e celular ficam fora do alcance dele. Ler `usuario` pelo pool do app misturaria as duas credenciais. A `0021` resolve só o necessário:
+
+| Função | Quem executa | Devolve |
+|---|---|---|
+| `ator_central(p_keycloak_sub uuid) → uuid` | só `safetycar_central` (sem PUBLIC, sem app) | o `usuario.id` quando o usuário tem perfil `central`, status `ativo`, `excluido_em` nulo **e** `operador_central.ativo`; **NULL** em qualquer outro caso: `sub` desconhecido ou nulo, tomador, parceiro, pendente, suspenso, bloqueado, excluído, sem cadastro de operador ou operador inativo |
+
+- **Só identificação.** A permissão continua sendo conferida por `operador_tem_permissao` e, de novo, dentro de cada função de ação. A API traduz NULL no mesmo 403 de "sem permissão", sem dizer qual foi o caso.
+- Não devolve e-mail, status nem outra coluna, e não escreve nada: é `STABLE`, e o teste confere que auditoria, `usuario` e `operador_central` ficam iguais. Tem `SECURITY DEFINER` com `search_path = public, pg_temp`.
+- **Sem `STRICT`, de propósito.** Com `STRICT`, o planejador troca `ator_central(NULL)` por NULL sem chamar a função, e a checagem de EXECUTE não acontece: o app receberia NULL em vez de 42501. Não vaza nada, mas a recusa ficaria inconsistente (há teste).
+- Lê o estado atual a cada chamada: desativar o operador ou suspender o usuário vale na hora.
+- `sub` fora do formato UUID é recusado pelo próprio tipo (22P02). A API valida o formato antes.
+- Testes: `25_ator_central_privilegios.sql` (forma e privilégios; o nome não termina em `_central.sql` porque esse sufixo faz o `testar.sh` rodar como a Central), `25_ator_central_app.sql` (o app recebe 42501, inclusive com `sub` nulo) e `25_ator_central_central.sql` (as nove situações, as mudanças de estado e a ausência de escrita).
+- Sem código de erro novo e sem cenário de concorrência: a função só lê.
 
 ### Controle
 
